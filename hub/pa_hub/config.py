@@ -9,12 +9,18 @@ from pydantic import BaseModel, Field
 
 DEFAULT_PORT = 7700
 DEFAULT_TIMEOUT_S = 3.0
+DEFAULT_ACTION_TIMEOUT_S = 30.0
+
+
+def default_home() -> Path:
+    """The hub data directory under LOCALAPPDATA, resolved when called."""
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "personal-automations"
 
 
 def default_db_path() -> str:
-    r"""Return the default history.db path under LOCALAPPDATA, resolved when called."""
-    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
-    return str(Path(base) / "personal-automations" / "history.db")
+    """Return the default history.db path under the hub home."""
+    return str(default_home() / "history.db")
 
 
 class DeviceEntry(BaseModel):
@@ -40,6 +46,7 @@ class HubConfig(BaseModel):
     devices: list[DeviceEntry] = Field(default_factory=list)
     db_path: str = Field(default_factory=default_db_path)
     timeout_s: float = DEFAULT_TIMEOUT_S
+    action_timeout_s: float = DEFAULT_ACTION_TIMEOUT_S
 
 
 def _expand(value: str | None) -> str | None:
