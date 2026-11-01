@@ -51,10 +51,11 @@ def _clamp(limit: int) -> int:
 
 class HistoryStore:
     def __init__(self, db_path: str) -> None:
+        if db_path == ":memory:":
+            raise ValueError("HistoryStore needs a file path; ':memory:' is not supported")
         self._db_path = db_path
-        if db_path != ":memory:":
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as conn:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+        with closing(self._connect()) as conn, conn:
             conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
