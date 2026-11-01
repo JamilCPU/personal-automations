@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pa-hub = "pa_hub.app:main"
+pa-hub = "pa_hub.cli:main"
 
 [tool.uv.sources]
 pa-core = { workspace = true }
