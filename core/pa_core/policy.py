@@ -57,7 +57,45 @@ _SYSTEMD_SYSTEM_PATTERNS: tuple[str, ...] = (
     "ssh",
     "sshd",
     "k3s*",
+    # OS plumbing seen on Raspberry Pi OS / Ubuntu images (boot, first-run, housekeeping)
+    "plymouth*",
+    "initrd-*",
+    "modprobe@*",
+    "cloud-*",
+    "apt-daily*",
+    "rpi-*",
+    "rpc-*",
+    "e2scrub*",
+    "sshd-keygen*",
+    "sshd@*",
+    "regenerate_ssh_host_keys",
+    "cockpit-*",
+    "user-runtime-dir@*",
+    "netplan-*",
+    "apparmor",
+    "auth-rpcgss-module",
+    "rc-local",
+    "keyboard-setup",
+    "console-setup",
+    "ldconfig",
+    "man-db",
+    "logrotate",
+    "fstrim",
+    "dpkg-db-backup",
+    "kmod-static-nodes",
+    "getty-static",
+    "emergency",
+    "rescue",
+    "NetworkManager-*",
+    "log2ram*",
+    "glamor-test",
+    "rp1-test",
+    "sshswitch",
 )
+
+# Structural rule: an inactive (not failed) template instance is plumbing unless allowlisted.
+_TEMPLATE_PATTERN = "*@*"
+_TEMPLATE_ALLOWLIST: tuple[str, ...] = ("code-server@*",)
 
 _WINDOWS_DIR = "c:\\windows\\"
 _SERVICE_SUFFIX = ".service"
@@ -69,6 +107,12 @@ class ActionNotAllowed(Exception):
 
 def _strip_service(name: str) -> str:
     return name.removesuffix(_SERVICE_SUFFIX)
+
+
+def _is_idle_template(base: str, active_state: str | None) -> bool:
+    if active_state != "inactive" or not fnmatchcase(base, _TEMPLATE_PATTERN):
+        return False
+    return not any(fnmatchcase(base, pattern) for pattern in _TEMPLATE_ALLOWLIST)
 
 
 def protection_for(kind: Kind, name: str, extra_locked: frozenset[str] = frozenset()) -> Protection:
@@ -89,10 +133,13 @@ def is_system(
     name: str,
     namespace: str | None = None,
     binary_path: str | None = None,
+    active_state: str | None = None,
 ) -> bool:
     if kind == "systemd":
         base = _strip_service(name)
-        return any(fnmatchcase(base, pattern) for pattern in _SYSTEMD_SYSTEM_PATTERNS)
+        if any(fnmatchcase(base, pattern) for pattern in _SYSTEMD_SYSTEM_PATTERNS):
+            return True
+        return _is_idle_template(base, active_state)
     if kind == "k3s":
         return namespace == "kube-system"
     if kind == "windows-service":

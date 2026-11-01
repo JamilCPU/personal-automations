@@ -92,6 +92,13 @@ def enum_windowed_pids() -> dict[int, str]:
     return found
 
 
+def _under_windows_dir(exe_path: object) -> bool:
+    """True when the executable lives under the Windows directory (case-insensitive)."""
+    if not isinstance(exe_path, str) or not exe_path:
+        return False
+    return exe_path.replace("/", "\\").lower().startswith(SYSTEM_ROOT.lower() + "\\")
+
+
 def _script_name(cmdline: list[str]) -> str | None:
     args = cmdline[1:]
     if "-jar" in args and args.index("-jar") + 1 < len(args):
@@ -179,7 +186,7 @@ class LocalWindowsDevice:
         windowed = self._windowed_pids()
         now = self._now()
         out: list[Program] = []
-        for proc in self._procs.process_iter(["pid", "name", "cmdline", "create_time"]):
+        for proc in self._procs.process_iter(["pid", "name", "exe", "cmdline", "create_time"]):
             info = proc.info
             program = self._process_program(info, windowed, now)
             if program is not None:
@@ -207,7 +214,7 @@ class LocalWindowsDevice:
             status="running",
             uptime_s=age,
             description=exe,
-            system=False,
+            system=_under_windows_dir(info.get("exe")),
             protection=protection,
             actions=allowed_actions("process", "running", protection),
             detail={"pid": str(pid), "exe": exe},

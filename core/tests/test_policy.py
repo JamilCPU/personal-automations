@@ -116,3 +116,34 @@ def test_check_action_raises():
     with pytest.raises(ActionNotAllowed):
         check_action(locked, "stop")
     check_action(_program("none", ["stop"]), "stop")
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "plymouth-start.service",
+        "initrd-cleanup.service",
+        "modprobe@drm.service",
+        "cloud-init-local.service",
+        "apt-daily.service",
+        "rpi-eeprom-update.service",
+        "rpc-statd-notify.service",
+        "e2scrub_all.service",
+        "sshd-keygen.service",
+        "cockpit-wsinstance-http.service",
+        "user-runtime-dir@1000.service",
+        "logrotate.service",
+        "NetworkManager-wait-online.service",
+    ],
+)
+def test_is_system_plumbing_patterns(name):
+    assert is_system("systemd", name)
+
+
+def test_is_system_structural_template_rule():
+    assert is_system("systemd", "foo@bar.service", active_state="inactive")
+    assert not is_system("systemd", "foo@bar.service", active_state="failed")
+    assert not is_system("systemd", "foo@bar.service", active_state="active")
+    assert not is_system("systemd", "foo@bar.service")
+    assert not is_system("systemd", "code-server@jamil.service", active_state="inactive")
+    assert not is_system("systemd", "plain.service", active_state="inactive")

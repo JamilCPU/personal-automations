@@ -6,6 +6,7 @@ from pa_agent.sources.systemd import list_systemd, systemd_action, systemd_logs
 from pa_core.runner import RunResult
 
 FIXTURE = Path(__file__).parent / "fixtures" / "systemctl_units.json"
+ROBOT_FIXTURE = Path(__file__).parent / "fixtures" / "systemctl_units_robot_pi.json"
 LIST_ARGV = ["systemctl", "list-units", "--type=service", "--all", "--output=json", "--no-pager"]
 
 
@@ -131,3 +132,30 @@ def test_logs_rejects_unsafe_unit():
     runner = FakeRunner(RunResult(0, "a", ""))
     assert systemd_logs(runner, "-f", 5) == []
     assert runner.calls == []
+
+
+def test_robot_pi_visible_units_are_useful():
+    runner = FakeRunner(RunResult(0, ROBOT_FIXTURE.read_text(encoding="utf-8"), ""))
+    visible = {p.name for p in list_systemd(runner, "robot-pi") if not p.system}
+    assert visible == {
+        "pa-agent.service",
+        "cockpit.service",
+        "code-server@jamil.service",
+        "upload_recordings.service",
+    }
+
+
+def test_inactive_template_unit_is_system_but_failed_is_not():
+    runner = _units(
+        _unit("foo@bar.service", active="inactive", sub="dead"),
+        _unit("foo@baz.service", active="failed", sub="failed"),
+        _unit("foo@qux.service", active="active", sub="running"),
+        _unit("code-server@x.service", active="inactive", sub="dead"),
+    )
+    by_name = {p.name: p.system for p in list_systemd(runner, "d")}
+    assert by_name == {
+        "foo@bar.service": True,
+        "foo@baz.service": False,
+        "foo@qux.service": False,
+        "code-server@x.service": False,
+    }
