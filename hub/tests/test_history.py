@@ -1,8 +1,10 @@
 import sqlite3
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from pa_hub.history import HistoryEntry, HistoryStore
 
 T0 = datetime(2026, 11, 1, 12, 0, 0, tzinfo=UTC)
@@ -130,7 +132,7 @@ def test_creates_parent_dir_and_indexes(tmp_path: Path) -> None:
     HistoryStore(str(db))
 
     assert db.exists()
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn:
         names = {
             row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='index'")
         }
@@ -144,6 +146,11 @@ def test_concurrent_writes_from_threads(tmp_path: Path) -> None:
         list(pool.map(lambda m: store.add(_entry(m)), range(200)))
 
     assert len(store.recent(limit=500)) == 200
+
+
+def test_memory_path_rejected(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="memory"):
+        HistoryStore(":memory:")
 
 
 def test_naive_timestamp_treated_as_utc(tmp_path: Path) -> None:
