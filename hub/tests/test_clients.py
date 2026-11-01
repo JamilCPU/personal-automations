@@ -202,3 +202,33 @@ def test_token_file_read(tmp_path, monkeypatch):
     by_id = {d.id: d for d in cfg.devices}
     assert by_id["pi3"].token == "filetok"
     assert by_id["pi1"].token is None
+
+
+def _timeout_gate(needed: float):
+    def side_effect(request: httpx.Request) -> httpx.Response:
+        if request.extensions["timeout"]["read"] < needed:
+            raise httpx.ReadTimeout("slow", request=request)
+        return httpx.Response(200, json=envelope({"ok": True, "message": "done"}))
+
+    return side_effect
+
+
+@respx.mock
+async def test_mutating_calls_use_action_timeout(entry):
+    client = RemoteAgentClient(entry, timeout_s=1.0, action_timeout_s=10.0)
+    respx.post(f"{BASE}/v1/actions").mock(side_effect=_timeout_gate(5.0))
+    respx.post(f"{BASE}/v1/reboot").mock(side_effect=_timeout_gate(5.0))
+    respx.put(f"{BASE}/v1/usb").mock(side_effect=_timeout_gate(5.0))
+    respx.post(f"{BASE}/v1/groups/lab/restart").mock(side_effect=_timeout_gate(5.0))
+    assert (await client.act("docker:web", "restart")).ok
+    assert (await client.reboot()).ok
+    assert (await client.set_usb(True)).ok
+    assert (await client.group_restart("lab")).ok
+
+
+@respx.mock
+async def test_reads_keep_short_timeout(entry):
+    client = RemoteAgentClient(entry, timeout_s=1.0, action_timeout_s=10.0)
+    respx.get(f"{BASE}/v1/programs").mock(side_effect=_timeout_gate(5.0))
+    with pytest.raises(DeviceOffline):
+        await client.programs()

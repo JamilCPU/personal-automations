@@ -38,8 +38,8 @@ def build_devices(cfg: HubConfig) -> tuple[dict[str, DeviceClient], list[Closer]
             devices[entry.id] = LocalWindowsDevice(device_id=entry.id)
             continue
         try:
-            remote = RemoteAgentClient(entry, cfg.timeout_s)
-        except ValueError as exc:
+            remote = RemoteAgentClient(entry, cfg.timeout_s, cfg.action_timeout_s)
+        except (ValueError, OSError) as exc:
             logger.warning("device %s unavailable: %s", entry.id, exc)
             devices[entry.id] = UnavailableDevice(entry)
         else:
@@ -108,15 +108,21 @@ def cmd_add_agent(args: argparse.Namespace) -> int:
         print(f"unknown agent device: {args.device}", file=sys.stderr)
         return 1
     agent_dir = config_path.parent / "agents" / entry.id
+    cert_dest, token_dest = agent_dir / "cert.pem", agent_dir / "token"
+    if args.cert and not Path(args.cert).is_file():
+        print(f"cert file not found: {args.cert}", file=sys.stderr)
+        return 1
+    has_cert = bool(args.cert) or cert_dest.is_file()
+    has_token = bool(args.token and args.token.strip()) or token_dest.is_file()
+    if not (has_cert and has_token):
+        missing = [n for n, ok in (("cert.pem", has_cert), ("token", has_token)) if not ok]
+        print(f"{entry.id}: missing {', '.join(missing)} (nothing written)", file=sys.stderr)
+        return 1
     agent_dir.mkdir(parents=True, exist_ok=True)
     if args.cert:
-        shutil.copyfile(args.cert, agent_dir / "cert.pem")
-    if args.token:
-        (agent_dir / "token").write_text(args.token.strip(), encoding="utf-8")
-    missing = [n for n in ("cert.pem", "token") if not (agent_dir / n).is_file()]
-    if missing:
-        print(f"{entry.id}: missing {', '.join(missing)} in {agent_dir}", file=sys.stderr)
-        return 1
+        shutil.copyfile(args.cert, cert_dest)
+    if args.token and args.token.strip():
+        token_dest.write_text(args.token.strip(), encoding="utf-8")
     print(f"{entry.id}: cert and token present in {agent_dir}")
     return 0
 

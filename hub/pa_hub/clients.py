@@ -62,7 +62,9 @@ def _error_text(response: httpx.Response) -> str:
 
 
 class RemoteAgentClient:
-    def __init__(self, entry: DeviceEntry, timeout_s: float) -> None:
+    def __init__(
+        self, entry: DeviceEntry, timeout_s: float, action_timeout_s: float | None = None
+    ) -> None:
         if not entry.url or not entry.cert_file:
             msg = f"device {entry.id}: agent devices need url and cert_file"
             raise ValueError(msg)
@@ -71,6 +73,8 @@ class RemoteAgentClient:
             raise ValueError(msg)
         self.device_id = entry.id
         self.capabilities: set[str] = set(entry.capabilities)
+        self._timeout_s = timeout_s
+        self._action_timeout_s = action_timeout_s if action_timeout_s is not None else timeout_s
         self._http = httpx.AsyncClient(
             base_url=entry.url,
             verify=build_ssl_context(entry.cert_file),
@@ -81,9 +85,14 @@ class RemoteAgentClient:
     async def aclose(self) -> None:
         await self._http.aclose()
 
-    async def _request(self, method: str, path: str, **kwargs: Any) -> Any:
+    async def _request(
+        self, method: str, path: str, *, mutating: bool = False, **kwargs: Any
+    ) -> Any:
+        timeout = self._action_timeout_s if mutating else self._timeout_s
         try:
-            response = await self._http.request(method, f"/v1{path}", **kwargs)
+            response = await self._http.request(
+                method, f"/v1{path}", timeout=timeout, **kwargs
+            )
         except (httpx.TransportError, ssl.SSLError) as exc:
             raise DeviceOffline(self.device_id) from exc
         if response.status_code >= HTTP_MULTIPLE_CHOICES:
@@ -115,22 +124,22 @@ class RemoteAgentClient:
         return await self._request("GET", "/logs", params={"id": pid, "lines": lines})
 
     async def act(self, pid: str, action: ActionName) -> ActionResult:
-        data = await self._request("POST", "/actions", json={"id": pid, "action": action})
+        data = await self._request("POST", "/actions", mutating=True, json={"id": pid, "action": action})
         return ActionResult.model_validate(data)
 
     async def group_restart(self, project: str) -> ActionResult:
         path = f"/groups/{quote(project, safe='')}/restart"
-        return ActionResult.model_validate(await self._request("POST", path))
+        return ActionResult.model_validate(await self._request("POST", path, mutating=True))
 
     async def usb(self) -> UsbState:
         return UsbState.model_validate(await self._request("GET", "/usb"))
 
     async def set_usb(self, on: bool) -> ActionResult:
-        data = await self._request("PUT", "/usb", json={"on": on})
+        data = await self._request("PUT", "/usb", mutating=True, json={"on": on})
         return ActionResult.model_validate(data)
 
     async def reboot(self) -> ActionResult:
-        return ActionResult.model_validate(await self._request("POST", "/reboot"))
+        return ActionResult.model_validate(await self._request("POST", "/reboot", mutating=True))
 
 
 class UnavailableDevice:
