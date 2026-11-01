@@ -245,3 +245,24 @@ def test_cli_init_minimal_has_no_optional_keys(tmp_path):
     cfg = load_config(str(out / "agent.toml"))
     assert cfg.usb_script is None
     assert cfg.kubeconfig is None
+
+
+@pytest.mark.parametrize("hub_ip", ["10.0.0.5", "::ffff:10.0.0.5"])
+def test_hub_ip_treats_ipv4_mapped_ipv6_as_ipv4(hub_ip):
+    for client_host in ("10.0.0.5", "::ffff:10.0.0.5"):
+        client, _ = _client(cfg=_cfg(hub_ip=hub_ip), client=(client_host, 50000))
+        assert client.get("/v1/programs", headers=AUTH).status_code == 200
+    client, _ = _client(cfg=_cfg(hub_ip=hub_ip), client=("::ffff:10.0.0.6", 50000))
+    assert client.get("/v1/programs", headers=AUTH).status_code == 403
+
+
+def test_hub_ip_unparseable_client_host_is_forbidden():
+    client, _ = _client(cfg=_cfg(hub_ip="10.0.0.5"), client=("not-an-ip", 50000))
+    assert client.get("/v1/programs", headers=AUTH).status_code == 403
+
+
+def test_cli_init_hub_ip_written_to_config(tmp_path):
+    out = tmp_path / "a"
+    argv = ["init", "--device-id", "pi3", "--ip", "192.0.2.103", "--out", str(out)]
+    assert main([*argv, "--hub-ip", "192.0.2.99"]) == 0
+    assert load_config(str(out / "agent.toml")).hub_ip == "192.0.2.99"

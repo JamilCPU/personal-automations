@@ -1,0 +1,17 @@
+[Unit]
+Description=Personal Automations agent
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=pa-agent
+Group=pa-agent
+SupplementaryGroups=docker systemd-journal
+ExecStart=/opt/personal-automations/venv/bin/pa-agent serve --config /etc/personal-automations/agent.toml
+Restart=always
+RestartSec=3
+# sudo (systemctl/lidar-power) needs privilege escalation, so this must stay false.
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
