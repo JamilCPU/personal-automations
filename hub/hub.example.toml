@@ -1,0 +1,55 @@
+# Copy to hub.toml. Tokens live in hub.secrets.toml (gitignored), shaped like:
+#   [clients]
+#   "<random bearer token>" = "phone"
+#   "<random bearer token>" = "mcp"
+#   [device_tokens]          # optional; overrides token_file
+#   pi1 = "<agent token>"
+# %VAR% and ~ in cert_file/key_file/token_file are expanded at load time.
+bind = "0.0.0.0"
+port = 7700
+cert_file = '%LOCALAPPDATA%\personal-automations\hub\cert.pem'
+key_file = '%LOCALAPPDATA%\personal-automations\hub\key.pem'
+# db_path defaults to %LOCALAPPDATA%\personal-automations\history.db
+timeout_s = 3.0
+
+[[devices]]
+id = "jw-pc"
+name = "Jamil's PC"
+role = "Workstation · the hub"
+ip = "192.168.0.99"
+kind = "local"
+capabilities = []
+
+[[devices]]
+id = "pi1"
+name = "Pi 1"
+role = "Network"
+ip = "192.168.0.101"
+kind = "agent"
+url = "https://192.168.0.101:7701"
+cert_file = '%LOCALAPPDATA%\personal-automations\agents\pi1\cert.pem'
+token_file = '%LOCALAPPDATA%\personal-automations\agents\pi1\token'
+k3s_source = true
+capabilities = ["reboot"]
+
+[[devices]]
+id = "robot-pi"
+name = "Robot Pi"
+role = "Sentinel robot"
+ip = "192.168.0.102"
+kind = "agent"
+url = "https://192.168.0.102:7701"
+cert_file = '%LOCALAPPDATA%\personal-automations\agents\robot-pi\cert.pem'
+token_file = '%LOCALAPPDATA%\personal-automations\agents\robot-pi\token'
+capabilities = ["usb", "reboot"]
+
+[[devices]]
+id = "pi3"
+name = "Pi 3"
+role = "Gateway & audio"
+ip = "192.168.0.103"
+kind = "agent"
+url = "https://192.168.0.103:7701"
+cert_file = '%LOCALAPPDATA%\personal-automations\agents\pi3\cert.pem'
+token_file = '%LOCALAPPDATA%\personal-automations\agents\pi3\token'
+capabilities = ["reboot"]
