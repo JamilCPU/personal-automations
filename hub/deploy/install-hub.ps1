@@ -5,6 +5,9 @@
   Run from an elevated PowerShell. Idempotent: re-running replaces the task and rule.
     - Scheduled task "Personal Automations Hub": at logon of the current user, highest
       privileges, restarts on failure, runs `uv run --project <repo> pa-hub serve`.
+    - Scheduled task "Personal Automations MCP": same trigger and settings, runs
+      `deploy\run-mcp-http.ps1` (MCP server over streamable HTTP on :7702; needs the user
+      environment variable PA_MCP_HTTP_TOKEN, see that script).
     - Firewall rule "Personal Automations Hub": inbound TCP 7700,7702 from 192.0.2.0/24,
       Private profile only.
   -Uninstall removes both.
@@ -17,6 +20,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $TaskName = 'Personal Automations Hub'
+$McpTaskName = 'Personal Automations MCP'
 $RuleName = 'Personal Automations Hub'
 $Ports = '7700,7702'
 $LanSubnet = '192.0.2.0/24'
@@ -34,6 +38,13 @@ if ($Uninstall) {
         Write-Host "Removed scheduled task '$TaskName'."
     } else {
         Write-Host "Scheduled task '$TaskName' not present."
+    }
+    if (Get-ScheduledTask -TaskName $McpTaskName -ErrorAction SilentlyContinue) {
+        Stop-ScheduledTask -TaskName $McpTaskName -ErrorAction SilentlyContinue
+        Unregister-ScheduledTask -TaskName $McpTaskName -Confirm:$false
+        Write-Host "Removed scheduled task '$McpTaskName'."
+    } else {
+        Write-Host "Scheduled task '$McpTaskName' not present."
     }
     if (Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue) {
         Remove-NetFirewallRule -DisplayName $RuleName
@@ -60,6 +71,16 @@ Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
 Write-Host ("{0} scheduled task '{1}' (at logon of {2}, highest privileges, restart on failure)." -f `
     ($(if ($existed) { 'Updated' } else { 'Created' }), $TaskName, $identity.Name))
 
+$mcpScript = Join-Path $ProjectDir 'hub\deploy\run-mcp-http.ps1'
+$mcpAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    -Argument "-NoProfile -ExecutionPolicy Bypass -File `"$mcpScript`" -ProjectDir `"$ProjectDir`"" `
+    -WorkingDirectory $ProjectDir
+$mcpExisted = [bool](Get-ScheduledTask -TaskName $McpTaskName -ErrorAction SilentlyContinue)
+Register-ScheduledTask -TaskName $McpTaskName -Action $mcpAction -Trigger $trigger `
+    -Principal $principal -Settings $settings -Force | Out-Null
+Write-Host ("{0} scheduled task '{1}' (MCP over HTTP on :7702; set PA_MCP_HTTP_TOKEN first)." -f `
+    ($(if ($mcpExisted) { 'Updated' } else { 'Created' }), $McpTaskName))
+
 $ruleExisted = [bool](Get-NetFirewallRule -DisplayName $RuleName -ErrorAction SilentlyContinue)
 if ($ruleExisted) { Remove-NetFirewallRule -DisplayName $RuleName }
 New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Action Allow -Protocol TCP `
@@ -67,4 +88,4 @@ New-NetFirewallRule -DisplayName $RuleName -Direction Inbound -Action Allow -Pro
 Write-Host ("{0} firewall rule '{1}' (TCP {2} from {3}, Private profile)." -f `
     ($(if ($ruleExisted) { 'Replaced' } else { 'Created' }), $RuleName, $Ports, $LanSubnet))
 
-Write-Host "Start now with: Start-ScheduledTask -TaskName '$TaskName' (or sign out and back in)."
+Write-Host "Start now with: Start-ScheduledTask -TaskName '$TaskName' (and '$McpTaskName'), or sign out and back in."
