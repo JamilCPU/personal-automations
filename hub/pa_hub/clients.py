@@ -131,3 +131,38 @@ class RemoteAgentClient:
 
     async def reboot(self) -> ActionResult:
         return ActionResult.model_validate(await self._request("POST", "/reboot"))
+
+
+class UnavailableDevice:
+    """Stand-in for an agent that is not deployed yet: every call reports it offline."""
+
+    def __init__(self, entry: DeviceEntry) -> None:
+        self.device_id = entry.id
+        self.capabilities: set[str] = set(entry.capabilities)
+
+    async def health(self) -> Health:
+        raise DeviceOffline(self.device_id)
+
+    async def programs(self) -> list[Program]:
+        raise DeviceOffline(self.device_id)
+
+    async def program(self, pid: str) -> Program:
+        raise DeviceOffline(self.device_id)
+
+    async def logs(self, pid: str, lines: int) -> list[str]:
+        raise DeviceOffline(self.device_id)
+
+    async def act(self, pid: str, action: ActionName) -> ActionResult:
+        raise DeviceOffline(self.device_id)
+
+    async def group_restart(self, project: str) -> ActionResult:
+        raise DeviceOffline(self.device_id)
+
+    async def usb(self) -> UsbState:
+        raise DeviceOffline(self.device_id)
+
+    async def set_usb(self, on: bool) -> ActionResult:
+        raise DeviceOffline(self.device_id)
+
+    async def reboot(self) -> ActionResult:
+        raise DeviceOffline(self.device_id)

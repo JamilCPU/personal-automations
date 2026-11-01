@@ -104,7 +104,7 @@ def entry(device_id: str, caps: list[str] | None = None, *, k3s: bool = False) -
 
 
 def standard(
-    tmp_path: Path, timeout_s: float = 1.0, **overrides: FakeClient
+    tmp_path: Path, timeout_s: float = 1.0, action_timeout_s: float = 30.0, **overrides: FakeClient
 ) -> tuple[HubService, dict[str, FakeClient]]:
     clients = {
         "jw-pc": FakeClient(
@@ -132,6 +132,7 @@ def standard(
         entries,
         HistoryStore(str(tmp_path / "h.db")),
         timeout_s,
+        action_timeout_s=action_timeout_s,
     )
     return service, clients
 
@@ -274,9 +275,24 @@ async def test_usb_and_group_history(tmp_path: Path) -> None:
 
 
 async def test_offline_action_recorded(tmp_path: Path) -> None:
-    service, _ = standard(tmp_path, timeout_s=0.1, pi3=FakeClient(delay=10))
+    service, _ = standard(tmp_path, timeout_s=0.1, action_timeout_s=0.1, pi3=FakeClient(delay=10))
     # reboot on pi3 hits the fake immediately; use act which awaits program() (delayed)
     with pytest.raises(DeviceOffline):
         await service.act("phone", "pi3", "x", "restart")
     [h] = await service.recent_history(10)
     assert h.ok is False
+
+
+async def test_action_timeout_is_longer_than_read_timeout(tmp_path: Path) -> None:
+    class SlowAct(FakeClient):
+        async def act(self, pid: str, action: ActionName) -> ActionResult:
+            await asyncio.sleep(0.4)
+            return await super().act(pid, action)
+
+    slow = SlowAct([prog("s:r", "robot-pi")], caps={"reboot"})
+    service, _ = standard(tmp_path, timeout_s=0.1, action_timeout_s=2.0, **{"robot-pi": slow})
+    result = await service.act("phone", "robot-pi", "s:r", "restart")
+    assert result.ok
+    service._action_timeout_s = 0.1
+    with pytest.raises(DeviceOffline):
+        await service.act("phone", "robot-pi", "s:r", "restart")

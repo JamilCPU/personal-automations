@@ -16,6 +16,7 @@ from pa_hub.history import HistoryEntry, HistoryStore
 
 K3S_PREFIX = "k3s:"
 DETAIL_HISTORY_LIMIT = 10
+DEFAULT_ACTION_TIMEOUT_S = 30.0
 T = TypeVar("T")
 
 logger = logging.getLogger(__name__)
@@ -56,11 +57,13 @@ class HubService:
         entries: dict[str, DeviceEntry],
         history: HistoryStore,
         timeout_s: float,
+        action_timeout_s: float = DEFAULT_ACTION_TIMEOUT_S,
     ) -> None:
         self._clients = devices
         self._entries = entries
         self._history = history
         self._timeout_s = timeout_s
+        self._action_timeout_s = action_timeout_s
         self._order = {device_id: index for index, device_id in enumerate(entries)}
         self._k3s_source = next((i for i, e in entries.items() if e.k3s_source), None)
 
@@ -87,9 +90,10 @@ class HubService:
             raise ActionNotAllowed(f"{device_id} does not support {capability}")
         return client
 
-    async def _call(self, device_id: str, call: Awaitable[T]) -> T:
+    async def _call(self, device_id: str, call: Awaitable[T], *, mutating: bool = False) -> T:
+        timeout = self._action_timeout_s if mutating else self._timeout_s
         try:
-            return await asyncio.wait_for(call, timeout=self._timeout_s)
+            return await asyncio.wait_for(call, timeout=timeout)
         except TimeoutError as exc:
             raise DeviceOffline(device_id) from exc
 
@@ -232,27 +236,27 @@ class HubService:
     async def act(self, client: str, device_id: str, pid: str, action: ActionName) -> ActionResult:
         async def call() -> ActionResult:
             target = self._route(device_id, pid)
-            return await self._call(device_id, target.act(pid, action))
+            return await self._call(device_id, target.act(pid, action), mutating=True)
 
         return await self._record(client, device_id, pid, action, call)
 
     async def group_restart(self, client: str, device_id: str, project: str) -> ActionResult:
         async def call() -> ActionResult:
             target = self._client(device_id)
-            return await self._call(device_id, target.group_restart(project))
+            return await self._call(device_id, target.group_restart(project), mutating=True)
 
         return await self._record(client, device_id, f"group:{project}", "restart", call)
 
     async def set_usb(self, client: str, device_id: str, on: bool) -> ActionResult:
         async def call() -> ActionResult:
             target = self._require(device_id, "usb")
-            return await self._call(device_id, target.set_usb(on))
+            return await self._call(device_id, target.set_usb(on), mutating=True)
 
         return await self._record(client, device_id, "usb", "on" if on else "off", call)
 
     async def reboot(self, client: str, device_id: str) -> ActionResult:
         async def call() -> ActionResult:
             target = self._require(device_id, "reboot")
-            return await self._call(device_id, target.reboot())
+            return await self._call(device_id, target.reboot(), mutating=True)
 
         return await self._record(client, device_id, "reboot", "reboot", call)
