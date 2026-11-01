@@ -175,3 +175,49 @@ def test_gen_token_prints_fresh_token(capsys) -> None:
     assert main(["gen-token"]) == 0
     assert len(first) >= 32
     assert first != capsys.readouterr().out.strip()
+
+
+async def test_real_http_app_requires_token() -> None:
+    app = BearerAuthMiddleware(_server().streamable_http_app(), "secret-token")
+    transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+    async with httpx.AsyncClient(transport=transport, base_url="http://t") as client:
+        denied = await client.post("/mcp")
+        passed = await client.post("/mcp", headers={"Authorization": "Bearer secret-token"})
+    assert denied.status_code == 401
+    assert passed.status_code != 401
+
+
+async def test_non_http_scopes_rejected_but_lifespan_passes() -> None:
+    seen: list[str] = []
+
+    async def inner(scope, receive, send) -> None:
+        seen.append(scope["type"])
+
+    app = BearerAuthMiddleware(inner, "t")
+    sent: list[dict] = []
+
+    async def send(msg) -> None:
+        sent.append(msg)
+
+    await app({"type": "websocket", "headers": []}, None, send)
+    await app({"type": "lifespan"}, None, send)
+    assert seen == ["lifespan"]
+    assert sent == [{"type": "websocket.close", "code": 1008}]
+
+
+def test_http_mode_refuses_without_tls_files(monkeypatch, tmp_path, capsys) -> None:
+    monkeypatch.setenv("PA_MCP_HTTP_TOKEN", "x")
+    monkeypatch.setenv("PA_HUB_URL", HUB)
+    monkeypatch.setenv("PA_HUB_TOKEN", TOKEN)
+    monkeypatch.setenv("PA_MCP_TLS_CERT", str(tmp_path / "nope.pem"))
+    monkeypatch.setenv("PA_MCP_TLS_KEY", str(tmp_path / "nope.key"))
+    assert main(["--http"]) == 1
+    assert "TLS file not found" in capsys.readouterr().err
+
+
+async def test_path_params_are_encoded(hub) -> None:
+    route = hub.get(url__regex=r".*/v1/devices/.*").respond(
+        json={"success": True, "data": {}, "error": None}
+    )
+    await _call("get_device", {"device": "a/b ?x"})
+    assert route.calls.last.request.url.raw_path.startswith(b"/v1/devices/a%2Fb%20%3Fx")

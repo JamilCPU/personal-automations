@@ -73,4 +73,6 @@ From an elevated PowerShell: `hub\deploy\install-hub.ps1` (task at logon, firewa
 Environment: `PA_HUB_URL` (for example `https://192.168.0.99:7700`), `PA_HUB_TOKEN` (the `mcp` client token), `PA_HUB_CERT` (path to the hub `cert.pem`, pinned).
 
 - stdio (local agents): `uv run --project <repo> pa-mcp`. Registered for Claude Code with `claude mcp add personal-automations -s user -e ... -- uv run --project <repo> pa-mcp`.
-- Streamable HTTP (agents on other machines): `pa-mcp --http --host 192.168.0.99 --port 7702` serves `/mcp` and requires `Authorization: Bearer $PA_MCP_HTTP_TOKEN`; it refuses to start without that variable. Make a token with `pa-mcp gen-token`, then `setx PA_MCP_HTTP_TOKEN <token>`. `install-hub.ps1` also installs a "Personal Automations MCP" scheduled task for this (`run-mcp-http.ps1`).
+- Streamable HTTP (agents on other machines): `pa-mcp --http --host 192.168.0.99 --port 7702` serves `/mcp` over TLS and requires `Authorization: Bearer $PA_MCP_HTTP_TOKEN`; it refuses to start without that variable. Make a token with `pa-mcp gen-token`, then `setx PA_MCP_HTTP_TOKEN <token>`. `install-hub.ps1` also installs a "Personal Automations MCP" scheduled task for this (`run-mcp-http.ps1`).
+
+The HTTP transport uses TLS: `PA_MCP_TLS_CERT` / `PA_MCP_TLS_KEY` default to the hub's `%LOCALAPPDATA%\personal-automations\hub\cert.pem` / `key.pem` (SAN 192.168.0.99), and `--http` refuses to start if either is missing. Clients connect to `https://192.168.0.99:7702/mcp` and pin that certificate.
