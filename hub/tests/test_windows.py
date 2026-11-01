@@ -36,8 +36,14 @@ class FakeService:
 
 
 class FakeProc:
-    def __init__(self, pid, name, cmdline=(), created=OLD):
-        self.info = {"pid": pid, "name": name, "cmdline": list(cmdline), "create_time": created}
+    def __init__(self, pid, name, cmdline=(), created=OLD, exe=None):
+        self.info = {
+            "pid": pid,
+            "name": name,
+            "exe": exe,
+            "cmdline": list(cmdline),
+            "create_time": created,
+        }
         self.terminated = False
 
     def terminate(self):
@@ -267,3 +273,13 @@ async def test_logs_and_unsupported():
     for call in (dev.usb(), dev.reboot(), dev.group_restart("p"), dev.set_usb(True)):
         with pytest.raises(ActionNotAllowed, match="not supported on jw PC"):
             await call
+
+
+async def test_process_under_windows_dir_is_system():
+    explorer = FakeProc(8, "explorer.exe", exe=r"C:\WINDOWS\explorer.exe")
+    comfy = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"], exe=r"F:\py\python.exe")
+    notepad = FakeProc(9, "notepad.exe")
+    windowed = {8: "Program Manager", 9: "n"}
+    progs = await make(procs=[explorer, comfy, notepad], windowed=windowed).programs()
+    system = {p.detail["pid"]: p.system for p in progs}
+    assert system == {"8": True, "100": False, "9": False}
