@@ -7,7 +7,9 @@ import os
 import secrets
 import ssl
 import sys
+from pathlib import Path
 from typing import Annotated, Any, Literal
+from urllib.parse import quote
 
 import httpx
 from mcp.server.fastmcp import FastMCP
@@ -23,6 +25,9 @@ TOKEN_BYTES = 32
 HTTP_ERROR_STATUS = 400
 HTTP_UNAUTHORIZED = 401
 BEARER_PREFIX = "Bearer "
+WS_POLICY_VIOLATION = 1008
+TLS_CERT_ENV = "PA_MCP_TLS_CERT"
+TLS_KEY_ENV = "PA_MCP_TLS_KEY"
 
 DEVICES_TEXT = (
     'Devices: "jw-pc" (jw PC), "robot-pi" (Robot Pi), "pi1" (Pi1), "pi3" (Pi3). '
@@ -84,6 +89,11 @@ def _unwrap(response: httpx.Response) -> Any:
     raise ToolError(f"hub returned unexpected response (HTTP {response.status_code})")
 
 
+def _seg(value: str) -> str:
+    """Percent-encode one URL path segment."""
+    return quote(value, safe="")
+
+
 def _query(params: dict[str, Any]) -> dict[str, str]:
     """Render query values the way FastAPI parses them (lowercase booleans)."""
     return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in params.items()}
@@ -108,7 +118,7 @@ def build_server(
         description=f"Show one device's summary (online, health, programs). {DEVICES_TEXT}"
     )
     async def get_device(device: str) -> Any:
-        return await hub.call("GET", f"/devices/{device}")
+        return await hub.call("GET", f"/devices/{_seg(device)}")
 
     @mcp.tool(
         description=(
@@ -161,7 +171,7 @@ def build_server(
         )
     )
     async def restart_group(device: str, project: str) -> Any:
-        return await hub.call("POST", f"/devices/{device}/groups/{project}/restart")
+        return await hub.call("POST", f"/devices/{_seg(device)}/groups/{_seg(project)}/restart")
 
     @mcp.tool(
         description=(
@@ -170,7 +180,7 @@ def build_server(
         )
     )
     async def get_usb_power(device: str) -> Any:
-        return await hub.call("GET", f"/devices/{device}/usb")
+        return await hub.call("GET", f"/devices/{_seg(device)}/usb")
 
     @mcp.tool(
         description=(
@@ -179,7 +189,7 @@ def build_server(
         )
     )
     async def set_usb_power(device: str, on: bool) -> Any:
-        return await hub.call("PUT", f"/devices/{device}/usb", body={"on": on})
+        return await hub.call("PUT", f"/devices/{_seg(device)}/usb", body={"on": on})
 
     @mcp.tool(
         description=(
@@ -188,7 +198,7 @@ def build_server(
         )
     )
     async def reboot_device(device: str) -> Any:
-        return await hub.call("POST", f"/devices/{device}/reboot")
+        return await hub.call("POST", f"/devices/{_seg(device)}/reboot")
 
     @mcp.tool(
         description="Show the most recent actions taken through the hub (client, device, result)."
@@ -207,8 +217,13 @@ class BearerAuthMiddleware:
         self._token = token.encode()
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or self._authorized(scope):
+        kind = scope["type"]
+        if kind == "lifespan" or (kind == "http" and self._authorized(scope)):
             await self._app(scope, receive, send)
+            return
+        if kind != "http":
+            if kind == "websocket":
+                await send({"type": "websocket.close", "code": WS_POLICY_VIOLATION})
             return
         body = json.dumps({"success": False, "data": None, "error": "unauthorized"}).encode()
         headers = [
@@ -253,11 +268,32 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def _serve_http(hub: HubClient, host: str, port: int, token: str) -> None:
+def _default_hub_dir() -> Path:
+    base = os.environ.get("LOCALAPPDATA") or str(Path.home() / "AppData" / "Local")
+    return Path(base) / "personal-automations" / "hub"
+
+
+def _tls_files() -> tuple[str, str] | None:
+    """The TLS cert/key for HTTP mode (env overrides, else the hub's own); None if missing."""
+    hub_dir = _default_hub_dir()
+    cert = os.environ.get(TLS_CERT_ENV) or str(hub_dir / "cert.pem")
+    key = os.environ.get(TLS_KEY_ENV) or str(hub_dir / "key.pem")
+    missing = [p for p in (cert, key) if not Path(p).is_file()]
+    if missing:
+        print(
+            f"pa-mcp: TLS file not found: {', '.join(missing)} "
+            f"(set {TLS_CERT_ENV} / {TLS_KEY_ENV})",
+            file=sys.stderr,
+        )
+        return None
+    return cert, key
+
+
+def _serve_http(hub: HubClient, host: str, port: int, token: str, tls: tuple[str, str]) -> None:
     import uvicorn
 
     app = BearerAuthMiddleware(build_server(hub, host, port).streamable_http_app(), token)
-    uvicorn.run(app, host=host, port=port)
+    uvicorn.run(app, host=host, port=port, ssl_certfile=tls[0], ssl_keyfile=tls[1])
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -270,7 +306,10 @@ def main(argv: list[str] | None = None) -> int:
     if hub is None or (args.http and http_token is None):
         return 1
     if http_token is not None:
-        _serve_http(hub, args.host, args.port, http_token)
+        tls = _tls_files()
+        if tls is None:
+            return 1
+        _serve_http(hub, args.host, args.port, http_token, tls)
     else:
         build_server(hub).run("stdio")
     return 0
