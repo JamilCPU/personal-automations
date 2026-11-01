@@ -24,7 +24,8 @@ def _to_program(row: object, device: str) -> Program | None:
     unit = row.get("unit")
     if not isinstance(unit, str) or not unit or row.get("load") == _NOT_FOUND:
         return None
-    status = _ACTIVE_TO_STATUS.get(str(row.get("active", "")).lower(), "unknown")
+    active = str(row.get("active", "")).lower()
+    status = _ACTIVE_TO_STATUS.get(active, "unknown")
     protection = protection_for("systemd", unit)
     return Program(
         id=f"systemd:{unit}",
@@ -33,7 +34,7 @@ def _to_program(row: object, device: str) -> Program | None:
         device=device,
         status=status,
         description=str(row.get("description", "")),
-        system=is_system("systemd", unit),
+        system=is_system("systemd", unit, active_state=active),
         protection=protection,
         actions=allowed_actions("systemd", status, protection),
         detail={"sub": str(row.get("sub", ""))},
