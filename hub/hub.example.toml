@@ -14,7 +14,7 @@ timeout_s = 3.0
 
 [[devices]]
 id = "jw-pc"
-name = "Jamil's PC"
+name = "jw PC"
 role = "Workstation · the hub"
 ip = "192.0.2.99"
 kind = "local"
@@ -22,7 +22,7 @@ capabilities = []
 
 [[devices]]
 id = "pi1"
-name = "Pi 1"
+name = "Pi1"
 role = "Network"
 ip = "192.0.2.101"
 kind = "agent"
@@ -45,7 +45,7 @@ capabilities = ["usb", "reboot"]
 
 [[devices]]
 id = "pi3"
-name = "Pi 3"
+name = "Pi3"
 role = "Gateway & audio"
 ip = "192.0.2.103"
 kind = "agent"
