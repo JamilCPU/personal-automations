@@ -11,14 +11,15 @@ members = ["core", "agent", "hub", "mcp"]
 [tool.uv.sources]
 pa-core = { workspace = true }
 pa-agent = { workspace = true }
+pa-hub = { workspace = true }
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio", "respx", "ruff", "pa-core", "pa-agent"]
+dev = ["pytest", "pytest-asyncio", "respx", "ruff", "pa-core", "pa-agent", "pa-hub"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-testpaths = ["core", "agent"]
+testpaths = ["core", "agent", "hub"]
 
 [tool.ruff]
 line-length = 100
