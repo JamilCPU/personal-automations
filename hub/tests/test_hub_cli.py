@@ -55,3 +55,23 @@ async def test_undeployed_agent_becomes_offline_stand_in(tmp_path: Path) -> None
     assert isinstance(devices["pi3"], UnavailableDevice)
     with pytest.raises(DeviceOffline):
         await devices["pi3"].health()
+
+
+def test_add_agent_validates_before_writing(tmp_path: Path) -> None:
+    init(tmp_path)
+    config = str(tmp_path / "hub.toml")
+    assert main(["add-agent", "--device", "pi3", "--token", "T", "--config", config]) == 1
+    assert not (tmp_path / "agents" / "pi3" / "token").exists()
+    missing = str(tmp_path / "nope.pem")
+    args = ["add-agent", "--device", "pi3", "--cert", missing, "--token", "T", "--config", config]
+    assert main(args) == 1
+
+
+async def test_missing_cert_yields_offline_device(tmp_path: Path) -> None:
+    init(tmp_path)
+    agent_dir = tmp_path / "agents" / "pi3"
+    agent_dir.mkdir(parents=True)
+    (agent_dir / "token").write_text("T")
+    cfg = load_hub_config(tmp_path / "hub.toml", tmp_path / "hub.secrets.toml")
+    devices, _ = build_devices(cfg)
+    assert isinstance(devices["pi3"], UnavailableDevice)
