@@ -65,3 +65,12 @@ Agents that are not deployed yet (no token or cert on disk) are reported as offl
 ## Windows autostart
 
 From an elevated PowerShell: `hub\deploy\install-hub.ps1` (task at logon, firewall rule for TCP 7700 and 7702 from 192.0.2.0/24, Private profile). `-Uninstall` removes both.
+
+## MCP server
+
+`pa-mcp` (package `mcp/`) exposes the same actions as MCP tools: `list_devices`, `get_device`, `list_programs`, `get_program`, `get_program_logs`, `program_action`, `restart_group`, `get_usb_power`, `set_usb_power`, `reboot_device`, `recent_history`. Each returns the hub's `data` or raises a tool error carrying the hub's `error` text. There is no confirmation step.
+
+Environment: `PA_HUB_URL` (for example `https://192.0.2.99:7700`), `PA_HUB_TOKEN` (the `mcp` client token), `PA_HUB_CERT` (path to the hub `cert.pem`, pinned).
+
+- stdio (local agents): `uv run --project <repo> pa-mcp`. Registered for Claude Code with `claude mcp add personal-automations -s user -e ... -- uv run --project <repo> pa-mcp`.
+- Streamable HTTP (agents on other machines): `pa-mcp --http --host 192.0.2.99 --port 7702` serves `/mcp` and requires `Authorization: Bearer $PA_MCP_HTTP_TOKEN`; it refuses to start without that variable. Make a token with `pa-mcp gen-token`, then `setx PA_MCP_HTTP_TOKEN <token>`. `install-hub.ps1` also installs a "Personal Automations MCP" scheduled task for this (`run-mcp-http.ps1`).
