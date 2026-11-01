@@ -71,9 +71,7 @@ def _strip_service(name: str) -> str:
     return name.removesuffix(_SERVICE_SUFFIX)
 
 
-def protection_for(
-    kind: Kind, name: str, extra_locked: frozenset[str] = frozenset()
-) -> Protection:
+def protection_for(kind: Kind, name: str, extra_locked: frozenset[str] = frozenset()) -> Protection:
     if kind == "windows-service":
         locked = {n.lower() for n in LOCKED | extra_locked}
         if name.lower() in locked:
@@ -102,17 +100,17 @@ def is_system(
     return False
 
 
-def allowed_actions(
-    kind: Kind, status: Status, protection: Protection
-) -> list[ActionName]:
+def allowed_actions(kind: Kind, status: Status, protection: Protection) -> list[ActionName]:
     if protection == "locked":
         return []
     if kind == "k3s":
         return ["restart"]
     if kind == "process":
         return ["stop"] if status == "running" else []
-    if status == "running":
+    if status in ("running", "restarting"):
         return ["stop", "restart"]
+    if status == "failed":
+        return ["start", "restart"]
     return ["start"]
 
 

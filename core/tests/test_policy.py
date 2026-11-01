@@ -35,6 +35,14 @@ def test_stopped_container_actions():
     assert allowed_actions("docker", "stopped", "none") == ["start"]
 
 
+def test_restarting_and_failed_actions():
+    assert allowed_actions("systemd", "restarting", "none") == ["stop", "restart"]
+    assert allowed_actions("systemd", "failed", "none") == ["start", "restart"]
+    assert allowed_actions("systemd", "failed", "locked") == []
+    assert allowed_actions("k3s", "failed", "none") == ["restart"]
+    assert allowed_actions("process", "failed", "none") == []
+
+
 def test_k3s_restart_only():
     assert allowed_actions("k3s", "running", "none") == ["restart"]
     assert allowed_actions("k3s", "stopped", "none") == ["restart"]
@@ -63,7 +71,13 @@ def test_pihole_confirm():
 
 @pytest.mark.parametrize(
     "name",
-    ["getty@tty1.service", "getty@tty1", "systemd-logind.service", "cron.service", "k3s-agent.service"],
+    [
+        "getty@tty1.service",
+        "getty@tty1",
+        "systemd-logind.service",
+        "cron.service",
+        "k3s-agent.service",
+    ],
 )
 def test_is_system_true(name):
     assert is_system("systemd", name)
