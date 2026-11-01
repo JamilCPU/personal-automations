@@ -25,7 +25,7 @@ class DeviceEntry(BaseModel):
     kind: Literal["agent", "local"]
     url: str | None = None
     cert_file: str | None = None
-    token: str | None = None
+    token: str | None = Field(default=None, repr=False)
     token_file: str | None = None
     k3s_source: bool = False
     capabilities: list[str] = Field(default_factory=list)

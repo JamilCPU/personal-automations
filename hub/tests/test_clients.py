@@ -181,6 +181,10 @@ def test_config_merges_secrets(tmp_path, monkeypatch):
     cfg = load_hub_config(HUB_DIR / "hub.example.toml", secrets)
     assert cfg.clients == {"phone-token": "phone", "mcp-token": "mcp"}
     by_id = {d.id: d for d in cfg.devices}
+    assert {d.id: d.name for d in cfg.devices} == {
+        "jw-pc": "jw PC", "robot-pi": "Robot Pi", "pi1": "Pi1", "pi3": "Pi3",
+    }
+    assert "pi1-token" not in repr(by_id["pi1"])
     assert by_id["pi1"].token == "pi1-token"
     assert by_id["pi1"].k3s_source is True
     assert by_id["robot-pi"].capabilities == ["usb", "reboot"]
