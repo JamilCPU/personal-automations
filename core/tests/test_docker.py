@@ -57,9 +57,7 @@ def test_docker_cli_missing_returns_empty():
 def _line(name: str, state: str, labels: str = "", running_for: str = "1 day ago") -> str:
     import json
 
-    return json.dumps(
-        {"Names": name, "State": state, "Labels": labels, "RunningFor": running_for}
-    )
+    return json.dumps({"Names": name, "State": state, "Labels": labels, "RunningFor": running_for})
 
 
 @pytest.mark.parametrize(
@@ -68,8 +66,8 @@ def _line(name: str, state: str, labels: str = "", running_for: str = "1 day ago
         ("running", "running", 86400, ["stop", "restart"]),
         ("exited", "stopped", None, ["start"]),
         ("created", "stopped", None, ["start"]),
-        ("restarting", "restarting", None, ["start"]),
-        ("dead", "failed", None, ["start"]),
+        ("restarting", "restarting", None, ["stop", "restart"]),
+        ("dead", "failed", None, ["start", "restart"]),
         ("weird", "unknown", None, ["start"]),
     ],
 )
