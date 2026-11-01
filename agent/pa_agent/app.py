@@ -1,6 +1,7 @@
 """Agent HTTPS API and the pa-agent command line."""
 
 import argparse
+import ipaddress
 import json
 import os
 import secrets
@@ -48,6 +49,21 @@ def _not_supported() -> HTTPException:
     return HTTPException(status_code=404, detail="not supported on this device")
 
 
+def _normalise_ip(value: str) -> str:
+    """Canonical form of an IP; IPv4-mapped IPv6 collapses to IPv4. Non-IPs pass through."""
+    try:
+        addr = ipaddress.ip_address(value)
+    except ValueError:
+        return value
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped is not None:
+        return str(addr.ipv4_mapped)
+    return str(addr)
+
+
+def _is_hub(host: str | None, hub_ip: str) -> bool:
+    return host is not None and _normalise_ip(host) == _normalise_ip(hub_ip)
+
+
 def create_app(device: LinuxDevice, cfg: AgentConfig) -> FastAPI:
     app = FastAPI(title="pa-agent", docs_url=None, redoc_url=None, openapi_url=None)
     install_error_handlers(app)
@@ -57,7 +73,7 @@ def create_app(device: LinuxDevice, cfg: AgentConfig) -> FastAPI:
         # IP first, so a stranger gets 403 without ever exercising the token check.
         if cfg.hub_ip is not None:
             host = request.client.host if request.client else None
-            if host != cfg.hub_ip:
+            if not _is_hub(host, cfg.hub_ip):
                 raise HTTPException(status_code=403, detail="forbidden")
         return authenticate(request)
 
@@ -170,6 +186,7 @@ def cmd_init(args: argparse.Namespace) -> int:
         key_file=str(out / KEY_NAME),
         usb_script=args.usb_script,
         kubeconfig=args.kubeconfig,
+        hub_ip=args.hub_ip,
         node_devices=dict(DEFAULT_NODE_DEVICES),
     )
     (out / CERT_NAME).write_bytes(cert_pem)
@@ -199,6 +216,7 @@ def build_parser() -> argparse.ArgumentParser:
     init.add_argument("--ip", required=True)
     init.add_argument("--usb-script")
     init.add_argument("--kubeconfig")
+    init.add_argument("--hub-ip")
     init.add_argument("--out", required=True)
     init.set_defaults(func=cmd_init)
     serve = sub.add_parser("serve", help="run the HTTPS API")
