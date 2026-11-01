@@ -5,6 +5,7 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 TIMEOUT_RETURNCODE = 124
+NOT_FOUND_RETURNCODE = 127
 
 
 class RunResult(NamedTuple):
@@ -23,8 +24,17 @@ def run(argv: list[str], timeout: float = 30) -> RunResult:
         raise TypeError("argv must not be empty")
     try:
         proc = subprocess.run(
-            argv, check=False, capture_output=True, text=True, timeout=timeout, shell=False
+            argv,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+            shell=False,
         )
     except subprocess.TimeoutExpired:
         return RunResult(TIMEOUT_RETURNCODE, "", "timed out")
+    except OSError:
+        return RunResult(NOT_FOUND_RETURNCODE, "", f"{argv[0]} not found")
     return RunResult(proc.returncode, proc.stdout, proc.stderr)

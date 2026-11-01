@@ -27,3 +27,14 @@ def test_run_timeout():
     r = run([sys.executable, "-c", "import time; time.sleep(5)"], timeout=0.5)
     assert r.returncode == 124
     assert r.stderr == "timed out"
+
+
+def test_run_missing_executable_returns_127():
+    r = run(["definitely-not-a-real-binary-xyz"])
+    assert r == (127, "", "definitely-not-a-real-binary-xyz not found")
+
+
+def test_run_decodes_invalid_utf8_with_replacement():
+    r = run([sys.executable, "-c", "import sys; sys.stdout.buffer.write(bytes([97, 255, 98]))"])
+    assert r.returncode == 0
+    assert r.stdout == "a�b"
