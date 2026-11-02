@@ -296,3 +296,21 @@ async def test_action_timeout_is_longer_than_read_timeout(tmp_path: Path) -> Non
     service._action_timeout_s = 0.1
     with pytest.raises(DeviceOffline):
         await service.act("phone", "robot-pi", "s:r", "restart")
+
+
+class GarbageClient(FakeClient):
+    async def programs(self) -> list[Program]:
+        return [Program.model_validate({"bogus": 1})]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [FakeClient(error=ValueError("bad json")), FakeClient(error=RuntimeError("boom")), GarbageClient()],
+)
+async def test_misbehaving_client_is_offline_not_500(tmp_path: Path, bad: FakeClient) -> None:
+    service, _ = standard(tmp_path, pi3=bad)
+    by_id = {d.id: d for d in await service.devices()}
+    assert by_id["pi3"].online is False
+    assert all(by_id[i].online for i in ("jw-pc", "pi1", "robot-pi"))
+    ids = {p.id for p in await service.programs(None, include_system=True)}
+    assert "d:a" in ids

@@ -106,6 +106,8 @@ class RemoteAgentClient:
             body = response.json()
         except ValueError as exc:
             raise HubAgentError(self.device_id, response.status_code, "invalid JSON") from exc
+        if not isinstance(body, dict):
+            raise HubAgentError(self.device_id, response.status_code, "response is not an envelope")
         if not body.get("success"):
             raise HubAgentError(self.device_id, response.status_code, str(body.get("error")))
         return body.get("data")

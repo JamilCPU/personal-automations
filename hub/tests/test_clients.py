@@ -232,3 +232,11 @@ async def test_reads_keep_short_timeout(entry):
     respx.get(f"{BASE}/v1/programs").mock(side_effect=_timeout_gate(5.0))
     with pytest.raises(DeviceOffline):
         await client.programs()
+
+
+@respx.mock
+@pytest.mark.parametrize("body", [[1, 2], "text", 7, None])
+async def test_non_dict_json_body_is_agent_error(client, body):
+    respx.get(f"{BASE}/v1/programs").respond(200, json=body)
+    with pytest.raises(HubAgentError):
+        await client.programs()
