@@ -106,6 +106,10 @@ class HubService:
         except HubAgentError as exc:
             logger.warning("treating %s as offline: %s", device_id, exc)
             return None
+        except Exception:
+            # One misbehaving client (bad payload, bug) must not 500 the whole dashboard.
+            logger.exception("treating %s as offline after an unexpected error", device_id)
+            return None
 
     async def _snapshot(self, device_id: str) -> _Snapshot:
         client = self._clients[device_id]
@@ -116,9 +120,10 @@ class HubService:
             self._listing_call(device_id, client.programs()),
             usb_call,
         )
-        if health is None:
+        if health is None or programs is None:
+            # No health or no usable program list: the device is offline for the dashboard.
             return _Snapshot()
-        return _Snapshot(health=health, programs=programs or [], usb=usb)
+        return _Snapshot(health=health, programs=programs, usb=usb)
 
     async def _snapshots(self) -> dict[str, _Snapshot]:
         ids = [i for i in self._entries if i in self._clients]
