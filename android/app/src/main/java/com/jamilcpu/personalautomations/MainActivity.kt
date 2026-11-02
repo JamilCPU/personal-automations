@@ -15,7 +15,13 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.lifecycleScope
@@ -39,6 +45,7 @@ const val UNPAIRED_TEXT =
 
 class MainActivity : ComponentActivity() {
     private val settingsStore by lazy { SettingsStore(applicationContext) }
+    private var pendingPair by mutableStateOf<HubSettings?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -46,8 +53,19 @@ class MainActivity : ComponentActivity() {
         if (savedInstanceState == null) handlePairIntent(intent)
         setContent {
             MaterialTheme {
-                val settings by remember { settingsStore.settings }.collectAsState(initial = null)
-                AppShell(settings)
+                val state by remember { settingsStore.settings.map { SettingsState(true, it) } }
+                    .collectAsState(initial = SettingsState(false, null))
+                AppShell(state.settings, loaded = state.loaded)
+                pendingPair?.let { candidate ->
+                    AlertDialog(
+                        onDismissRequest = { pendingPair = null },
+                        title = { Text("Replace the current hub pairing?") },
+                        confirmButton = {
+                            TextButton(onClick = { pendingPair = null; savePairing(candidate) }) { Text("Replace") }
+                        },
+                        dismissButton = { TextButton(onClick = { pendingPair = null }) { Text("Cancel") } },
+                    )
+                }
             }
         }
     }
@@ -67,14 +85,20 @@ class MainActivity : ComponentActivity() {
             return
         }
         lifecycleScope.launch {
-            settingsStore.save(parsed)
+            if (settingsStore.settings.first() == null) savePairing(parsed) else pendingPair = parsed
+        }
+    }
+
+    private fun savePairing(s: HubSettings) {
+        lifecycleScope.launch {
+            settingsStore.save(s)
             Toast.makeText(this@MainActivity, "Paired with hub", Toast.LENGTH_SHORT).show()
         }
     }
 }
 
 @Composable
-fun AppShell(settings: HubSettings? = null) {
+fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
@@ -106,14 +130,23 @@ fun AppShell(settings: HubSettings? = null) {
             modifier = Modifier.padding(padding),
         ) {
             composable(routeFor("Devices")) {
-                Placeholder(if (settings == null) UNPAIRED_TEXT else "Devices")
+                Placeholder(placeholderText(settings, loaded, "Devices"))
             }
             composable(routeFor("Programs")) {
-                Placeholder(if (settings == null) UNPAIRED_TEXT else "Programs")
+                Placeholder(placeholderText(settings, loaded, "Programs"))
             }
         }
     }
 }
+
+private data class SettingsState(val loaded: Boolean, val settings: HubSettings?)
+
+private fun placeholderText(settings: HubSettings?, loaded: Boolean, title: String): String =
+    when {
+        !loaded -> ""
+        settings == null -> UNPAIRED_TEXT
+        else -> title
+    }
 
 private fun tabIcon(tab: String): ImageVector = Icons.Filled.Settings
 

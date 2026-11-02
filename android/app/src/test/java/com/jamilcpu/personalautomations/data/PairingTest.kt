@@ -33,6 +33,12 @@ class PairingTest {
     }
 
     @Test
+    fun nonHttpsUrlIsNull() {
+        assertNull(parsePairUri("pa://pair?url=http%3A%2F%2Fh%3A7700&token=t&fp=$fp"))
+        assertNull(parsePairUri("pa://pair?url=192.0.2.99&token=t&fp=$fp"))
+    }
+
+    @Test
     fun missingFieldIsNull() {
         assertNull(parsePairUri("pa://pair?url=https%3A%2F%2Fh&fp=$fp"))
         assertNull(parsePairUri("pa://pair?token=t&fp=$fp"))
