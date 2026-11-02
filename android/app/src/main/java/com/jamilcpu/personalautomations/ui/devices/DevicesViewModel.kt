@@ -7,6 +7,7 @@ import com.jamilcpu.personalautomations.data.ActionResult
 import com.jamilcpu.personalautomations.data.DeviceSummary
 import com.jamilcpu.personalautomations.data.HubClient
 import com.jamilcpu.personalautomations.data.HubResult
+import com.jamilcpu.personalautomations.ui.common.HUB_UNREACHABLE
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -22,7 +23,7 @@ data class DevicesUiState(
     val devices: List<DeviceSummary> = emptyList(),
     /** Action failure, shown once as a snackbar. */
     val error: String? = null,
-    /** Load failure while nothing has loaded yet (empty/error state with Retry). */
+    /** Hub-reported (non-network) load failure; empty/error state with Retry when nothing has loaded. */
     val loadError: String? = null,
     /** A poll failed after data had loaded: banner, actions greyed out. */
     val stale: Boolean = false,
@@ -31,6 +32,10 @@ data class DevicesUiState(
     /** Robot-program group names (project) per device id, for "Restart all" buttons. */
     val groups: Map<String, List<String>> = emptyMap(),
 )
+
+/** Banner text: unreachable, or the hub's own error while older data is shown. */
+val DevicesUiState.banner: String?
+    get() = if (stale) HUB_UNREACHABLE else if (loaded) loadError else null
 
 class DevicesViewModel(private val api: HubClient) : ViewModel() {
     private val _state = MutableStateFlow(DevicesUiState())
@@ -83,7 +88,11 @@ class DevicesViewModel(private val api: HubClient) : ViewModel() {
             }
             // Keep the last data on a failed poll and flag it; no repeated snackbars.
             is HubResult.Err -> _state.update {
-                if (it.loaded) it.copy(stale = true) else it.copy(loading = false, loadError = result.message)
+                when {
+                    // Only a network failure (code 0) means the hub is unreachable.
+                    result.code == 0 && it.loaded -> it.copy(stale = true)
+                    else -> it.copy(loading = false, stale = false, loadError = result.message)
+                }
             }
         }
     }

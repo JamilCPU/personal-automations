@@ -77,7 +77,7 @@ fun ProgramsScreen(
                 }
             },
         )
-        if (state.stale) HubBanner()
+        state.banner?.let { HubBanner(text = it) }
         FilterRow(state.deviceFilter, onFilter)
         if (!state.loaded) {
             LoadState(error = state.error, onRetry = onRefresh)

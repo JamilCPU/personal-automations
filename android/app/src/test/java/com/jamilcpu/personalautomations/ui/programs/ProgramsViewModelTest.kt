@@ -113,4 +113,32 @@ class ProgramsViewModelTest {
         assertEquals(2, vm.state.value.programs.size)
         vm.stop()
     }
+
+    @Test
+    fun hub_error_after_load_shows_message_not_unreachable() = runTest(dispatcher) {
+        val hub = FakePrograms(all)
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        hub.failure = HubResult.Err("hub exploded", 500)
+        advanceTimeBy(5_001)
+        assertFalse(vm.state.value.stale)
+        assertEquals("hub exploded", vm.state.value.banner)
+        assertEquals(2, vm.state.value.programs.size)
+        vm.stop()
+    }
+
+    @Test
+    fun prefs_read_failure_falls_back_to_default() = runTest(dispatcher) {
+        val prefs = object : com.jamilcpu.personalautomations.data.UiPrefs {
+            override val hideSystem = kotlinx.coroutines.flow.flow<Boolean> { throw java.io.IOException("disk") }
+            override suspend fun setHideSystem(value: Boolean) = Unit
+        }
+        val vm = ProgramsViewModel(FakePrograms(all), prefs)
+        vm.start()
+        runCurrent()
+        assertTrue(vm.state.value.hideSystem)
+        assertEquals(2, vm.state.value.programs.size)
+        vm.stop()
+    }
 }

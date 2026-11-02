@@ -55,7 +55,7 @@ fun DevicesScreen(
         return
     }
     Column(modifier.fillMaxSize()) {
-        if (state.stale) HubBanner()
+        state.banner?.let { HubBanner(text = it) }
         LazyColumn(
             Modifier.fillMaxSize(),
             contentPadding = PaddingValues(16.dp),

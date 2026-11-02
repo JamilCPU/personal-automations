@@ -56,6 +56,7 @@ fun DeviceScreen(
         groups = state.groups[deviceId].orEmpty(),
         busy = deviceId in state.busy,
         stale = state.stale,
+        banner = state.banner,
         onSetUsb = { viewModel.setUsb(deviceId, it) },
         onRestartGroup = { viewModel.restartGroup(deviceId, it) },
         onReboot = { viewModel.reboot(deviceId) },
@@ -70,6 +71,7 @@ private fun DeviceContent(
     groups: List<String>,
     busy: Boolean,
     stale: Boolean,
+    banner: String?,
     onSetUsb: (Boolean) -> Unit,
     onRestartGroup: (String) -> Unit,
     onReboot: () -> Unit,
@@ -79,42 +81,42 @@ private fun DeviceContent(
     var pending by remember { mutableStateOf<Pending?>(null) }
     val canAct = !busy && device.online && !stale
     Column(modifier.fillMaxSize()) {
-    if (stale) HubBanner()
-    Column(
-        Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            StatusDot(device.online)
-            Spacer(Modifier.width(12.dp))
-            Column {
-                Text(device.name, style = MaterialTheme.typography.headlineSmall)
-                if (device.role.isNotBlank()) Text(device.role, style = MaterialTheme.typography.bodyMedium)
+        banner?.let { HubBanner(text = it) }
+        Column(
+            Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                StatusDot(device.online)
+                Spacer(Modifier.width(12.dp))
+                Column {
+                    Text(device.name, style = MaterialTheme.typography.headlineSmall)
+                    if (device.role.isNotBlank()) Text(device.role, style = MaterialTheme.typography.bodyMedium)
+                }
             }
-        }
-        val chips = healthChips(device)
-        if (device.online && chips.isNotEmpty()) ChipRow(chips)
+            val chips = healthChips(device)
+            if (device.online && chips.isNotEmpty()) ChipRow(chips)
 
-        if ("usb" in device.capabilities) {
-            UsbRow(on = device.usb?.on == true, enabled = canAct) { wantOn ->
-                if (wantOn) onSetUsb(true) else pending = Pending.UsbOff
+            if ("usb" in device.capabilities) {
+                UsbRow(on = device.usb?.on == true, enabled = canAct) { wantOn ->
+                    if (wantOn) onSetUsb(true) else pending = Pending.UsbOff
+                }
             }
-        }
-        groups.forEach { project ->
-            Button(
-                onClick = { pending = Pending.Group(project) },
+            groups.forEach { project ->
+                Button(
+                    onClick = { pending = Pending.Group(project) },
+                    enabled = canAct,
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Restart all robot programs") }
+            }
+            TextButton(onClick = onOpenPrograms) { Text("Programs on ${device.name}") }
+            OutlinedButton(
+                onClick = { pending = Pending.Reboot },
                 enabled = canAct,
                 modifier = Modifier.fillMaxWidth(),
-            ) { Text("Restart all robot programs") }
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+            ) { Text("Reboot ${device.name}…") }
         }
-        TextButton(onClick = onOpenPrograms) { Text("Programs on ${device.name}") }
-        OutlinedButton(
-            onClick = { pending = Pending.Reboot },
-            enabled = canAct,
-            modifier = Modifier.fillMaxWidth(),
-            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-        ) { Text("Reboot ${device.name}…") }
-    }
     }
 
     when (val p = pending) {
