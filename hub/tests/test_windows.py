@@ -36,15 +36,19 @@ class FakeService:
 
 
 class FakeProc:
-    def __init__(self, pid, name, cmdline=(), created=OLD, exe=None):
+    def __init__(self, pid, name, cmdline=(), created=OLD, exe=None, ppid=0):
         self.info = {
             "pid": pid,
             "name": name,
             "exe": exe,
             "cmdline": list(cmdline),
             "create_time": created,
+            "ppid": ppid,
         }
         self.terminated = False
+
+    def create_time(self):
+        return self.info["create_time"]
 
     def terminate(self):
         self.terminated = True
@@ -104,7 +108,7 @@ def make(procs=(), services=(), windowed=None, run=None):
 async def test_comfyui_named_from_folder():
     proc = FakeProc(100, "python.exe", ["python", "F:\\ComfyUI\\main.py"])
     progs = await make(procs=[proc]).programs()
-    assert [p.id for p in progs] == ["process:ComfyUI#100"]
+    assert [p.id for p in progs] == ["process:ComfyUI#100@1000"]
     assert progs[0].kind == "process"
     assert progs[0].actions == ["stop"]
     assert progs[0].uptime_s == int(NOW - OLD)
@@ -121,7 +125,7 @@ async def test_young_python_and_windowless_ignored():
 async def test_windowed_process_listed_with_title():
     proc = FakeProc(7, "notepad.exe")
     progs = await make(procs=[proc], windowed={7: "Untitled - Notepad"}).programs()
-    assert progs[0].id == "process:Untitled - Notepad#7"
+    assert progs[0].id == "process:Untitled - Notepad#7@1000"
 
 
 async def test_hub_process_locked():
@@ -138,13 +142,13 @@ async def test_hub_process_locked():
 async def test_process_stop_terminates_fresh_pid():
     proc = FakeProc(100, "python.exe", ["python", "F:\\ComfyUI\\main.py"])
     dev = make(procs=[proc])
-    result = await dev.act("process:ComfyUI#100", "stop")
+    result = await dev.act("process:ComfyUI#100@1000", "stop")
     assert result.ok
     assert proc.terminated
     with pytest.raises(KeyError):
         await dev.act("process:Other#999", "stop")
     with pytest.raises(ActionNotAllowed):
-        await dev.act("process:ComfyUI#100", "restart")
+        await dev.act("process:ComfyUI#100@1000", "restart")
 
 
 async def test_service_listing_and_protection():
@@ -283,3 +287,66 @@ async def test_process_under_windows_dir_is_system():
     progs = await make(procs=[explorer, comfy, notepad], windowed=windowed).programs()
     system = {p.detail["pid"]: p.system for p in progs}
     assert system == {"8": True, "100": False, "9": False}
+
+
+VENV_PY = r"F:\pa\.venv\Scripts\python.exe"
+BASE_PY = r"C:\Py\python3.13.exe"
+
+
+async def test_launcher_and_child_with_same_args_are_one_program():
+    args = [r"F:\ComfyUI\main.py", "--listen"]
+    launcher = FakeProc(100, "python.exe", [VENV_PY, *args], ppid=1)
+    child = FakeProc(101, "python3.13.exe", [BASE_PY, *args], ppid=100)
+    progs = await make(procs=[launcher, child]).programs()
+    assert [p.id for p in progs] == ["process:ComfyUI#101@1000"]
+    assert progs[0].actions == ["stop"]
+
+
+async def test_hub_ancestor_chain_locked_and_collapsed():
+    shell = FakeProc(50, "pa-hub.exe", [r"F:\pa\.venv\Scripts\pa-hub.exe", "serve"], ppid=1)
+    venv = FakeProc(51, "python.exe", [VENV_PY, "-m", "pa_hub", "serve"], ppid=50)
+    hub = FakeProc(HUB_PID, "python3.13.exe", [BASE_PY, "-m", "pa_hub", "serve"], ppid=51)
+    dev = make(procs=[shell, venv, hub])
+    (prog,) = await dev.programs()
+    assert prog.detail["pid"] == str(HUB_PID)
+    assert prog.protection == "locked"
+    assert prog.actions == []
+    locked = dev._locked_pids(dev._snapshot())
+    assert {50, 51, HUB_PID} <= locked
+    with pytest.raises(ActionNotAllowed):
+        await dev.act(prog.id, "stop")
+    assert not any(p.terminated for p in (shell, venv, hub))
+
+
+async def test_mcp_server_tree_locked():
+    mcp = FakeProc(60, "python3.exe", ["python3", r"F:\pa\.venv\Scripts\pa-mcp", "--http"])
+    (prog,) = await make(procs=[mcp]).programs()
+    assert prog.protection == "locked"
+    assert prog.actions == []
+
+
+@pytest.mark.parametrize("exe", ["python3.exe", "python3.13.exe", "python3.12.exe", "pythonw.exe"])
+async def test_versioned_interpreters_recognised(exe):
+    proc = FakeProc(100, exe, [exe, r"F:\tools\bot.py"])
+    (prog,) = await make(procs=[proc]).programs()
+    assert prog.name == "bot.py"
+
+
+async def test_pid_reuse_refused():
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"], created=OLD + 50)
+    dev = make(procs=[proc])
+    with pytest.raises(KeyError):
+        await dev.act("process:ComfyUI#100@1000", "stop")
+    with pytest.raises(KeyError):
+        await dev.act("process:ComfyUI#100", "stop")
+    assert not proc.terminated
+
+
+async def test_terminate_refused_when_live_process_changed():
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev = make(procs=[proc])
+    program = await dev.program("process:ComfyUI#100@1000")
+    proc.info["create_time"] = OLD + 99
+    with pytest.raises(KeyError):
+        dev._act(program, "stop")
+    assert not proc.terminated
