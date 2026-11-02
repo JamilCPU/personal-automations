@@ -52,15 +52,28 @@ fun buildPinnedHubClient(settings: HubSettings): HttpClient =
         }
     }
 
-class HubApi(private val client: HttpClient, settings: HubSettings) {
+/** The slice of the hub API the device screens use; lets view models take a fake. */
+interface HubClient {
+    suspend fun devices(): HubResult<List<DeviceSummary>>
+
+    suspend fun programs(device: String?, includeSystem: Boolean): HubResult<List<Program>>
+
+    suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult>
+
+    suspend fun reboot(device: String): HubResult<ActionResult>
+
+    suspend fun restartGroup(device: String, project: String): HubResult<ActionResult>
+}
+
+class HubApi(private val client: HttpClient, settings: HubSettings) : HubClient {
     private val base = settings.url.trimEnd('/') + "/v1"
     private val token = settings.token
 
-    suspend fun devices(): HubResult<List<DeviceSummary>> = read("/devices")
+    override suspend fun devices(): HubResult<List<DeviceSummary>> = read("/devices")
 
     suspend fun device(id: String): HubResult<DeviceSummary> = read("/devices/${seg(id)}")
 
-    suspend fun programs(device: String?, includeSystem: Boolean): HubResult<List<Program>> =
+    override suspend fun programs(device: String?, includeSystem: Boolean): HubResult<List<Program>> =
         read("/programs") {
             if (device != null) parameter("device", device)
             parameter("include_system", includeSystem)
@@ -86,19 +99,19 @@ class HubApi(private val client: HttpClient, settings: HubSettings) {
             body = hubJson.encodeToString(ActionRequest.serializer(), ActionRequest(device, id, action)),
         )
 
-    suspend fun restartGroup(device: String, project: String): HubResult<ActionResult> =
+    override suspend fun restartGroup(device: String, project: String): HubResult<ActionResult> =
         mutate(post = true, path = "/devices/${seg(device)}/groups/${seg(project)}/restart")
 
     suspend fun usb(device: String): HubResult<UsbState> = read("/devices/${seg(device)}/usb")
 
-    suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult> =
+    override suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult> =
         mutate(
             post = false,
             path = "/devices/${seg(device)}/usb",
             body = hubJson.encodeToString(UsbRequest.serializer(), UsbRequest(on)),
         )
 
-    suspend fun reboot(device: String): HubResult<ActionResult> =
+    override suspend fun reboot(device: String): HubResult<ActionResult> =
         mutate(post = true, path = "/devices/${seg(device)}/reboot")
 
     suspend fun history(limit: Int): HubResult<List<HistoryEntry>> =
