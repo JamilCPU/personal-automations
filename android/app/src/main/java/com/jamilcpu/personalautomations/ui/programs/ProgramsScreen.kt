@@ -85,7 +85,7 @@ fun ProgramsScreen(
             return@Column
         }
         val (refreshing, startRefresh) = rememberRefreshing(onRefresh)
-        PullToRefreshBox(isRefreshing = refreshing || state.refreshing, onRefresh = startRefresh, modifier = Modifier.fillMaxSize()) {
+        PullToRefreshBox(isRefreshing = refreshing || (state.refreshing && state.programs.isNotEmpty()), onRefresh = startRefresh, modifier = Modifier.fillMaxSize()) {
             if (state.programs.isEmpty()) {
                 // Keeps the pull gesture available on an empty list.
                 LazyColumn(Modifier.fillMaxSize()) {

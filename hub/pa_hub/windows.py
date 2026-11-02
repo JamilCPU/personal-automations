@@ -336,6 +336,13 @@ class LocalWindowsDevice:
 
     # ---- DeviceClient --------------------------------------------------
 
+    def _invalidate_caches(self) -> None:
+        """Drop cached listings after a mutation so the next read reflects it."""
+        with self._programs_lock:
+            self._programs_cache = None
+        with self._health_lock:
+            self._health_cache = None
+
     def _cached_programs(self) -> list[Program]:
         """One shared enumeration per TTL; concurrent callers wait on the lock and reuse it."""
         with self._programs_lock:
@@ -362,7 +369,10 @@ class LocalWindowsDevice:
     async def act(self, pid: str, action: ActionName) -> ActionResult:
         program = await self.program(pid)
         check_action(program, action)
-        return await asyncio.to_thread(self._act, program, action)
+        try:
+            return await asyncio.to_thread(self._act, program, action)
+        finally:
+            self._invalidate_caches()
 
     def _act(self, program: Program, action: ActionName) -> ActionResult:
         if program.kind == "docker":
@@ -435,7 +445,10 @@ class LocalWindowsDevice:
         return _parse_gpu(result.stdout) if result.returncode == 0 else None
 
     async def group_restart(self, project: str) -> ActionResult:
-        return await asyncio.to_thread(self._group_restart, project)
+        try:
+            return await asyncio.to_thread(self._group_restart, project)
+        finally:
+            self._invalidate_caches()
 
     def _group_restart(self, project: str) -> ActionResult:
         containers = [p.detail["container"] for p in self._docker_programs() if p.group == project]
