@@ -135,9 +135,7 @@ def create_app(
         return ok(await service.logs(device, id, lines))
 
     @router.post("/actions")
-    async def actions(
-        body: ActionRequest, name: str = Depends(actor)
-    ) -> ApiResponse[ActionResult]:
+    async def actions(body: ActionRequest, name: str = Depends(actor)) -> ApiResponse[ActionResult]:
         return ok(await service.act(name, body.device, body.id, body.action))
 
     @router.post("/devices/{device_id}/groups/{project}/restart")

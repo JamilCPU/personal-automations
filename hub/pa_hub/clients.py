@@ -90,9 +90,7 @@ class RemoteAgentClient:
     ) -> Any:
         timeout = self._action_timeout_s if mutating else self._timeout_s
         try:
-            response = await self._http.request(
-                method, f"/v1{path}", timeout=timeout, **kwargs
-            )
+            response = await self._http.request(method, f"/v1{path}", timeout=timeout, **kwargs)
         except (httpx.TransportError, ssl.SSLError) as exc:
             raise DeviceOffline(self.device_id) from exc
         if response.status_code >= HTTP_MULTIPLE_CHOICES:
@@ -126,7 +124,9 @@ class RemoteAgentClient:
         return await self._request("GET", "/logs", params={"id": pid, "lines": lines})
 
     async def act(self, pid: str, action: ActionName) -> ActionResult:
-        data = await self._request("POST", "/actions", mutating=True, json={"id": pid, "action": action})
+        data = await self._request(
+            "POST", "/actions", mutating=True, json={"id": pid, "action": action}
+        )
         return ActionResult.model_validate(data)
 
     async def group_restart(self, project: str) -> ActionResult:

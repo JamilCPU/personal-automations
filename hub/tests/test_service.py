@@ -305,7 +305,11 @@ class GarbageClient(FakeClient):
 
 @pytest.mark.parametrize(
     "bad",
-    [FakeClient(error=ValueError("bad json")), FakeClient(error=RuntimeError("boom")), GarbageClient()],
+    [
+        FakeClient(error=ValueError("bad json")),
+        FakeClient(error=RuntimeError("boom")),
+        GarbageClient(),
+    ],
 )
 async def test_misbehaving_client_is_offline_not_500(tmp_path: Path, bad: FakeClient) -> None:
     service, _ = standard(tmp_path, pi3=bad)
