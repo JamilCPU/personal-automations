@@ -25,7 +25,10 @@ SYSTEM_ROOT = "C:\\Windows"
 RESTART_WAIT_S = 15.0
 RESTART_POLL_S = 1.0
 MIN_AGE_S = 600
-INTERPRETERS = frozenset({"python.exe", "pythonw.exe", "node.exe", "java.exe"})
+# python.exe, pythonw.exe, python3.exe, python3.13.exe, python3.13w.exe, node.exe, java.exe
+INTERPRETER = re.compile(r"(?:python(?:\d+(?:\.\d+)*)?w?|node|java)\.exe", re.IGNORECASE)
+MCP_MARKERS = ("pa-mcp", "pa_mcp")
+PROC_ATTRS = ["pid", "ppid", "name", "exe", "cmdline", "create_time"]
 UNSUPPORTED = "not supported on jw PC"
 SERVICE_PREFIX = "windows-service:"
 PROCESS_PREFIX = "process:"
@@ -114,6 +117,59 @@ def _script_name(cmdline: list[str]) -> str | None:
     return base
 
 
+def _is_interpreter(exe: str) -> bool:
+    return INTERPRETER.fullmatch(exe) is not None
+
+
+def _args(info: dict[str, Any]) -> list[str]:
+    """Command-line arguments without argv[0] (a venv launcher and its child differ only there)."""
+    return list(info.get("cmdline") or [])[1:]
+
+
+def _is_mcp(info: dict[str, Any]) -> bool:
+    text = " ".join(info.get("cmdline") or []).lower()
+    return any(marker in text for marker in MCP_MARKERS)
+
+
+def _created(info: dict[str, Any]) -> float:
+    return float(info.get("create_time") or 0.0)
+
+
+def _parent(info: dict[str, Any], snap: dict[int, dict[str, Any]]) -> dict[str, Any] | None:
+    """The live parent, ignoring a reused ppid (a parent cannot be younger than its child)."""
+    parent = snap.get(info.get("ppid") or 0)
+    if parent is None or parent is info or _created(parent) > _created(info):
+        return None
+    return parent
+
+
+def _ancestors(pid: int, snap: dict[int, dict[str, Any]]) -> set[int]:
+    found: set[int] = set()
+    info = snap.get(pid)
+    while info is not None:
+        parent = _parent(info, snap)
+        if parent is None or parent["pid"] in found:
+            break
+        found.add(parent["pid"])
+        info = parent
+    return found
+
+
+def _descendants(pids: set[int], snap: dict[int, dict[str, Any]]) -> set[int]:
+    found: set[int] = set()
+    frontier = set(pids)
+    while frontier:
+        children = {
+            pid
+            for pid, info in snap.items()
+            if pid not in found and pid not in pids
+            and (parent := _parent(info, snap)) is not None and parent["pid"] in frontier
+        }
+        found |= children
+        frontier = children
+    return found
+
+
 def _parse_gpu(text: str) -> dict[str, float] | None:
     first = text.strip().splitlines()[0] if text.strip() else ""
     parts = [p.strip() for p in first.split(",")]
@@ -182,32 +238,62 @@ class LocalWindowsDevice:
             detail={"service": name, "binary": binpath or ""},
         )
 
+    def _snapshot(self) -> dict[int, dict[str, Any]]:
+        snap: dict[int, dict[str, Any]] = {}
+        for proc in self._procs.process_iter(PROC_ATTRS):
+            info = proc.info
+            if info.get("pid") is not None:
+                snap[info["pid"]] = info
+        return snap
+
+    def _locked_pids(self, snap: dict[int, dict[str, Any]]) -> set[int]:
+        """The hub and MCP server, every ancestor (venv launcher chain) and every descendant."""
+        seeds = {self._hub_pid} | {pid for pid, info in snap.items() if _is_mcp(info)}
+        locked = set(seeds)
+        for seed in seeds:
+            locked |= _ancestors(seed, snap)
+        return locked | _descendants(seeds, snap)
+
+    def _launchers(self, snap: dict[int, dict[str, Any]]) -> set[int]:
+        """Pids whose child runs the same arguments: the child is the real program, keep it."""
+        launchers: set[int] = set()
+        for info in snap.values():
+            parent = _parent(info, snap)
+            if parent is not None and _args(info) and _args(info) == _args(parent):
+                launchers.add(parent["pid"])
+        return launchers
+
     def _process_programs(self) -> list[Program]:
+        snap = self._snapshot()
         windowed = self._windowed_pids()
+        locked = self._locked_pids(snap)
+        launchers = self._launchers(snap)
         now = self._now()
         out: list[Program] = []
-        for proc in self._procs.process_iter(["pid", "name", "exe", "cmdline", "create_time"]):
-            info = proc.info
-            program = self._process_program(info, windowed, now)
+        for pid, info in snap.items():
+            if pid in launchers:
+                continue
+            program = self._process_program(info, windowed, now, pid in locked)
             if program is not None:
                 out.append(program)
         return out
 
     def _process_program(
-        self, info: dict[str, Any], windowed: dict[int, str], now: float
+        self, info: dict[str, Any], windowed: dict[int, str], now: float, locked: bool
     ) -> Program | None:
-        pid = info.get("pid")
+        pid = info["pid"]
         exe = str(info.get("name") or "")
-        age = int(now - (info.get("create_time") or now))
-        interpreter = exe.lower() in INTERPRETERS
-        if pid is None or not (pid in windowed or (interpreter and age >= MIN_AGE_S)):
+        created = info.get("create_time") or now
+        age = int(now - created)
+        interpreter = _is_interpreter(exe)
+        if not (pid in windowed or (interpreter and age >= MIN_AGE_S)):
             return None
         script = _script_name(info.get("cmdline") or []) if interpreter else None
         name = script or windowed.get(pid) or exe or str(pid)
-        locked = pid == self._hub_pid
         protection = "locked" if locked else protection_for("process", name)
+        stamp = str(int(created))
         return Program(
-            id=f"{PROCESS_PREFIX}{name}#{pid}",
+            id=f"{PROCESS_PREFIX}{name}#{pid}@{stamp}",
             name=name,
             kind="process",
             device=self.device_id,
@@ -217,7 +303,7 @@ class LocalWindowsDevice:
             system=_under_windows_dir(info.get("exe")),
             protection=protection,
             actions=allowed_actions("process", "running", protection),
-            detail={"pid": str(pid), "exe": exe},
+            detail={"pid": str(pid), "exe": exe, "create_time": stamp},
         )
 
     def _docker_programs(self) -> list[Program]:
@@ -230,9 +316,10 @@ class LocalWindowsDevice:
 
     def _find(self, pid: str) -> Program:
         if pid.startswith(PROCESS_PREFIX) and "#" in pid:
-            suffix = pid.rsplit("#", 1)[1]
+            number, _, stamp = pid.rsplit("#", 1)[1].partition("@")
             for program in self._process_programs():
-                if program.detail.get("pid") == suffix:
+                detail = program.detail
+                if stamp and detail.get("pid") == number and detail.get("create_time") == stamp:
                     return program
             raise KeyError(pid)
         for program in self._all_programs():
@@ -264,7 +351,7 @@ class LocalWindowsDevice:
         if program.kind == "docker":
             return docker_action(self._run, program.detail["container"], action)
         if program.kind == "process":
-            return self._terminate(int(program.detail["pid"]), program.name)
+            return self._terminate(program)
         name = program.detail["service"]
         if action == "restart":
             return self._restart_service(name)
@@ -289,9 +376,14 @@ class LocalWindowsDevice:
                 return ActionResult(ok=False, message=f"{name} did not stop within 15 s")
             self._sleep(RESTART_POLL_S)
 
-    def _terminate(self, pid: int, name: str) -> ActionResult:
+    def _terminate(self, program: Program) -> ActionResult:
+        """Stop a process, refusing (KeyError) if its pid now belongs to a different process."""
+        name = program.name
         try:
-            self._procs.Process(pid).terminate()
+            proc = self._procs.Process(int(program.detail["pid"]))
+            if str(int(proc.create_time())) != program.detail["create_time"]:
+                raise KeyError(program.id)
+            proc.terminate()
         except psutil.NoSuchProcess:
             return ActionResult(ok=False, message=f"{name} is no longer running")
         except psutil.Error as exc:
