@@ -20,7 +20,13 @@ const val POLL_INTERVAL_MS = 5_000L
 data class DevicesUiState(
     val loading: Boolean = true,
     val devices: List<DeviceSummary> = emptyList(),
+    /** Action failure, shown once as a snackbar. */
     val error: String? = null,
+    /** Load failure while nothing has loaded yet (empty/error state with Retry). */
+    val loadError: String? = null,
+    /** A poll failed after data had loaded: banner, actions greyed out. */
+    val stale: Boolean = false,
+    val loaded: Boolean = false,
     val busy: Set<String> = emptySet(),
     /** Robot-program group names (project) per device id, for "Restart all" buttons. */
     val groups: Map<String, List<String>> = emptyMap(),
@@ -48,6 +54,10 @@ class DevicesViewModel(private val api: HubClient) : ViewModel() {
         pollJob = null
     }
 
+    fun retry() {
+        viewModelScope.launch { refresh() }
+    }
+
     fun clearError() = _state.update { it.copy(error = null) }
 
     fun setUsb(deviceId: String, on: Boolean) = act(deviceId) { api.setUsb(deviceId, on) }
@@ -68,10 +78,12 @@ class DevicesViewModel(private val api: HubClient) : ViewModel() {
 
     private suspend fun refresh() {
         when (val result = api.devices()) {
-            is HubResult.Ok -> _state.update { it.copy(loading = false, devices = result.value) }
-            // Polling failures stay quiet once there is something on screen.
+            is HubResult.Ok -> _state.update {
+                it.copy(loading = false, loaded = true, stale = false, loadError = null, devices = result.value)
+            }
+            // Keep the last data on a failed poll and flag it; no repeated snackbars.
             is HubResult.Err -> _state.update {
-                it.copy(loading = false, error = if (it.devices.isEmpty()) result.message else it.error)
+                if (it.loaded) it.copy(stale = true) else it.copy(loading = false, loadError = result.message)
             }
         }
     }

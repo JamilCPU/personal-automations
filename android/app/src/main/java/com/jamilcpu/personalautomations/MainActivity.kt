@@ -30,7 +30,18 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jamilcpu.personalautomations.data.HubApi
 import com.jamilcpu.personalautomations.data.buildPinnedHubClient
+import com.jamilcpu.personalautomations.data.UiPrefsStore
 import com.jamilcpu.personalautomations.ui.devices.DeviceScreen
+import com.jamilcpu.personalautomations.ui.programs.ProgramDetailScreen
+import com.jamilcpu.personalautomations.ui.programs.ProgramDetailViewModel
+import com.jamilcpu.personalautomations.ui.programs.ProgramDetailViewModelFactory
+import com.jamilcpu.personalautomations.ui.programs.ProgramsScreen
+import com.jamilcpu.personalautomations.ui.programs.ProgramsViewModel
+import com.jamilcpu.personalautomations.ui.programs.ProgramsViewModelFactory
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import androidx.navigation.NavType
+import androidx.navigation.navArgument
 import com.jamilcpu.personalautomations.ui.devices.DevicesScreen
 import com.jamilcpu.personalautomations.ui.devices.DevicesViewModel
 import com.jamilcpu.personalautomations.ui.devices.DevicesViewModelFactory
@@ -116,12 +127,21 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
     val snackbar = remember { SnackbarHostState() }
     var programsDevice by remember { mutableStateOf<String?>(null) }
 
+    val api = remember(settings) { settings?.let { HubApi(buildPinnedHubClient(it), it) } }
     // One view model per pairing; the client is rebuilt only when the saved settings change.
     val devicesVm: DevicesViewModel? = settings?.let { s ->
-        val api = remember(s) { HubApi(buildPinnedHubClient(s), s) }
-        viewModel(key = "devices-${s.hashCode()}", factory = DevicesViewModelFactory(api))
+        viewModel(key = "devices-${s.hashCode()}", factory = DevicesViewModelFactory(api!!))
     }
     val devicesState = devicesVm?.state?.collectAsState()?.value
+    val context = LocalContext.current
+    val programsVm: ProgramsViewModel? = api?.let { client ->
+        viewModel(
+            key = "programs-${settings.hashCode()}",
+            factory = ProgramsViewModelFactory(client, UiPrefsStore(context)),
+        )
+    }
+    val programsState = programsVm?.state?.collectAsState()?.value
+    val onPrograms = currentRoute == routeFor("Programs")
     val onDevices = currentRoute == routeFor("devices") || currentRoute == DEVICE_ROUTE
 
     // Poll only while a devices screen is on screen and the app is resumed.
@@ -138,6 +158,17 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
         }
     }
 
+    if (programsVm != null) {
+        LifecycleResumeEffect(programsVm, onPrograms) {
+            if (onPrograms) programsVm.start()
+            onPauseOrDispose { programsVm.stop() }
+        }
+        LaunchedEffect(programsDevice) {
+            // Consume the preset so tapping the same device link again re-applies it.
+            programsDevice?.let { programsVm.setFilter(it); programsDevice = null }
+        }
+    }
+
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
@@ -145,7 +176,9 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
                 NAV_TABS.forEach { tab ->
                     val route = routeFor(tab)
                     NavigationBarItem(
-                        selected = currentRoute == route || (tab == "Devices" && currentRoute == DEVICE_ROUTE),
+                        selected = currentRoute == route ||
+                            (tab == "Devices" && currentRoute == DEVICE_ROUTE) ||
+                            (tab == "Programs" && currentRoute == PROGRAM_ROUTE),
                         onClick = {
                             navController.navigate(route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -169,7 +202,11 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
                 if (devicesVm == null || devicesState == null) {
                     Placeholder(placeholderText(settings, loaded, "Devices"))
                 } else {
-                    DevicesScreen(devicesState, onOpenDevice = { navController.navigate("device/$it") })
+                    DevicesScreen(
+                        devicesState,
+                        onOpenDevice = { navController.navigate("device/$it") },
+                        onRetry = devicesVm::retry,
+                    )
                 }
             }
             composable(DEVICE_ROUTE) { entry ->
@@ -187,14 +224,59 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
                 }
             }
             composable(routeFor("Programs")) {
-                // programsDevice carries the device filter preset for the Programs screen (Task 18).
-                Placeholder(placeholderText(settings, loaded, "Programs"))
+                if (programsVm == null || programsState == null) {
+                    Placeholder(placeholderText(settings, loaded, "Programs"))
+                } else {
+                    ProgramsScreen(
+                        state = programsState,
+                        onFilter = programsVm::setFilter,
+                        onHideSystem = programsVm::setHideSystem,
+                        onRefresh = programsVm::refresh,
+                        onOpenProgram = { device, id ->
+                            navController.navigate("program/${Uri.encode(device)}/${Uri.encode(id)}")
+                        },
+                    )
+                }
+            }
+            composable(
+                PROGRAM_ROUTE,
+                arguments = listOf(
+                    navArgument("device") { type = NavType.StringType },
+                    navArgument("id") { type = NavType.StringType },
+                ),
+            ) { entry ->
+                // Nav decodes route arguments; ids contain ':' '/' '@' '#' so they were Uri-encoded above.
+                val device = entry.arguments?.getString("device")
+                val id = entry.arguments?.getString("id")
+                if (api != null && device != null && id != null) {
+                    ProgramDetailRoute(api, device, id)
+                }
             }
         }
     }
 }
 
+@Composable
+private fun ProgramDetailRoute(api: HubApi, device: String, id: String) {
+    val vm: ProgramDetailViewModel = viewModel(
+        key = "program-$device-$id",
+        factory = ProgramDetailViewModelFactory(api, device, id),
+    )
+    val state by vm.state.collectAsState()
+    LaunchedEffect(vm) { vm.load() }
+    ProgramDetailScreen(
+        state = state,
+        visibleActions = vm.visibleActions(),
+        locked = vm.isLocked,
+        needsSecondConfirm = vm.needsSecondConfirm,
+        onAct = vm::act,
+        onRefresh = vm::load,
+        onRefreshLogs = vm::refreshLogs,
+    )
+}
+
 private const val DEVICE_ROUTE = "device/{id}"
+private const val PROGRAM_ROUTE = "program/{device}/{id}"
 
 private data class SettingsState(val loaded: Boolean, val settings: HubSettings?)
 
