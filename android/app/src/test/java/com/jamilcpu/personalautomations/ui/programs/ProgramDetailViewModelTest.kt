@@ -228,5 +228,40 @@ class ProgramDetailViewModelTest {
         assertEquals(false, vm.state.value.program?.pinned)
         assertEquals(before, hub.detailCalls)
         assertEquals(listOf(Triple("jw-pc", "pinned:process:Discord", false)), hub.pinCalls)
+        // Nothing left to show or re-pin: the screen closes back to the list.
+        assertTrue(vm.state.value.closed)
+    }
+
+    @Test
+    fun failed_placeholder_unpin_stays_open() = runTest(dispatcher) {
+        val hub = FakePrograms()
+        hub.detail = HubResult.Err("unknown program", 404)
+        hub.pinResult = HubResult.Err("Can't reach the hub", 0)
+        val vm = ProgramDetailViewModel(hub, "jw-pc", "pinned:process:Discord")
+        vm.load()
+        runCurrent()
+        vm.togglePin()
+        runCurrent()
+        assertFalse(vm.state.value.closed)
+        assertEquals(true, vm.state.value.program?.pinned)
+    }
+
+    @Test
+    fun live_program_unpin_does_not_close() = runTest(dispatcher) {
+        val (vm, _) = vmFor(prog("a", pinned = true))
+        vm.load()
+        runCurrent()
+        vm.togglePin()
+        runCurrent()
+        assertFalse(vm.state.value.closed)
+    }
+
+    @Test
+    fun placeholder_name_drops_interpreter_disambiguator() {
+        val p = placeholderProgram("jw-pc", "pinned:process:app.py|f:\\proj\\app.py")
+        assertEquals("app.py", p.name)
+        assertEquals("process", p.kind)
+        val k3s = placeholderProgram("robot-pi", "pinned:k3s:lab/mission-control@raspberrypi-2")
+        assertEquals("mission-control", k3s.name)
     }
 }
