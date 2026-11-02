@@ -24,3 +24,19 @@ def test_envelope_ok_and_fail():
     bad = fail("x")
     assert (bad.success, bad.data, bad.error) == (False, None, "x")
     assert isinstance(bad, ApiResponse)
+
+
+def test_program_pin_fields_default():
+    p = Program(
+        id="docker:web",
+        name="web",
+        kind="docker",
+        device="pi1",
+        status="running",
+        system=False,
+        protection="none",
+        actions=["stop"],
+    )
+    assert (p.pin_key, p.pinned) == ("", False)
+    pinned = Program.model_validate({**p.model_dump(), "pin_key": "docker:web", "pinned": True})
+    assert (pinned.pin_key, pinned.pinned) == ("docker:web", True)
