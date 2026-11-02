@@ -459,3 +459,58 @@ async def test_programs_reenumerates_after_act():
     before = counts["iter"]
     await dev.programs()
     assert counts["iter"] == before + 1
+
+
+async def test_act_does_not_block_on_held_cache_lock():
+    import asyncio
+    import threading
+
+    clock = Clock()
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev, _ = cached_device([proc], clock)
+    (prog,) = await dev.programs()
+    release = threading.Event()
+    held = threading.Event()
+
+    def hold():
+        with dev._programs_lock, dev._health_lock:
+            held.set()
+            release.wait(5)
+
+    thread = threading.Thread(target=hold)
+    thread.start()
+    held.wait(5)
+    try:
+        await asyncio.wait_for(dev.act(prog.id, "stop"), timeout=2)
+    finally:
+        release.set()
+        thread.join()
+
+
+async def test_enumeration_started_before_act_is_not_cached():
+    import threading
+
+    clock = Clock()
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev, counts = cached_device([proc], clock)
+    in_enum = threading.Event()
+    proceed = threading.Event()
+    real = dev._all_programs
+
+    def slow():
+        result = real()
+        in_enum.set()
+        proceed.wait(5)
+        return result
+
+    dev._all_programs = slow
+    thread = threading.Thread(target=dev._cached_programs)
+    thread.start()
+    in_enum.wait(5)
+    dev._invalidate_caches()
+    proceed.set()
+    thread.join()
+    dev._all_programs = real
+    before = counts["iter"]
+    dev._cached_programs()
+    assert counts["iter"] == before + 1
