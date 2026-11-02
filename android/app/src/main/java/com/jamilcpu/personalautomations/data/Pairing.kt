@@ -27,7 +27,7 @@ fun parsePairUri(uri: String): HubSettings? {
         val key = decode(pair.substring(0, i)) ?: return null
         params[key] = decode(pair.substring(i + 1)) ?: return null
     }
-    val url = params["url"]?.takeIf { it.isNotBlank() } ?: return null
+    val url = params["url"]?.takeIf { it.startsWith("https://") } ?: return null
     val token = params["token"]?.takeIf { it.isNotBlank() } ?: return null
     val fp = params["fp"]?.takeIf { HEX_64.matches(it) } ?: return null
     return HubSettings(url, token, fp.lowercase())
