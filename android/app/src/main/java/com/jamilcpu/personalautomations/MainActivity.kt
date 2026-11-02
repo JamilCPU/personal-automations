@@ -23,6 +23,17 @@ import androidx.compose.runtime.setValue
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.jamilcpu.personalautomations.data.HubApi
+import com.jamilcpu.personalautomations.data.buildPinnedHubClient
+import com.jamilcpu.personalautomations.ui.devices.DeviceScreen
+import com.jamilcpu.personalautomations.ui.devices.DevicesScreen
+import com.jamilcpu.personalautomations.ui.devices.DevicesViewModel
+import com.jamilcpu.personalautomations.ui.devices.DevicesViewModelFactory
 import androidx.compose.runtime.remember
 import androidx.lifecycle.lifecycleScope
 import com.jamilcpu.personalautomations.data.HubSettings
@@ -102,14 +113,39 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
     val navController = rememberNavController()
     val backStack by navController.currentBackStackEntryAsState()
     val currentRoute = backStack?.destination?.route
+    val snackbar = remember { SnackbarHostState() }
+    var programsDevice by remember { mutableStateOf<String?>(null) }
+
+    // One view model per pairing; the client is rebuilt only when the saved settings change.
+    val devicesVm: DevicesViewModel? = settings?.let { s ->
+        val api = remember(s) { HubApi(buildPinnedHubClient(s), s) }
+        viewModel(key = "devices-${s.hashCode()}", factory = DevicesViewModelFactory(api))
+    }
+    val devicesState = devicesVm?.state?.collectAsState()?.value
+    val onDevices = currentRoute == routeFor("devices") || currentRoute == DEVICE_ROUTE
+
+    // Poll only while a devices screen is on screen and the app is resumed.
+    if (devicesVm != null) {
+        LifecycleResumeEffect(devicesVm, onDevices) {
+            if (onDevices) devicesVm.start()
+            onPauseOrDispose { devicesVm.stop() }
+        }
+        LaunchedEffect(devicesState?.error) {
+            devicesState?.error?.let {
+                snackbar.showSnackbar(it)
+                devicesVm.clearError()
+            }
+        }
+    }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbar) },
         bottomBar = {
             NavigationBar {
                 NAV_TABS.forEach { tab ->
                     val route = routeFor(tab)
                     NavigationBarItem(
-                        selected = currentRoute == route,
+                        selected = currentRoute == route || (tab == "Devices" && currentRoute == DEVICE_ROUTE),
                         onClick = {
                             navController.navigate(route) {
                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
@@ -130,14 +166,35 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
             modifier = Modifier.padding(padding),
         ) {
             composable(routeFor("Devices")) {
-                Placeholder(placeholderText(settings, loaded, "Devices"))
+                if (devicesVm == null || devicesState == null) {
+                    Placeholder(placeholderText(settings, loaded, "Devices"))
+                } else {
+                    DevicesScreen(devicesState, onOpenDevice = { navController.navigate("device/$it") })
+                }
+            }
+            composable(DEVICE_ROUTE) { entry ->
+                val id = entry.arguments?.getString("id")
+                if (devicesVm != null && devicesState != null && id != null) {
+                    DeviceScreen(
+                        deviceId = id,
+                        state = devicesState,
+                        viewModel = devicesVm,
+                        onOpenPrograms = {
+                            programsDevice = it
+                            navController.navigate(routeFor("Programs")) { launchSingleTop = true }
+                        },
+                    )
+                }
             }
             composable(routeFor("Programs")) {
+                // programsDevice carries the device filter preset for the Programs screen (Task 18).
                 Placeholder(placeholderText(settings, loaded, "Programs"))
             }
         }
     }
 }
+
+private const val DEVICE_ROUTE = "device/{id}"
 
 private data class SettingsState(val loaded: Boolean, val settings: HubSettings?)
 
