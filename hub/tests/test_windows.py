@@ -274,7 +274,7 @@ async def test_logs_and_unsupported():
     with pytest.raises(KeyError):
         await dev.program("windows-service:nope")
     assert dev.capabilities == set()
-    for call in (dev.usb(), dev.reboot(), dev.group_restart("p"), dev.set_usb(True)):
+    for call in (dev.usb(), dev.reboot(), dev.set_usb(True)):
         with pytest.raises(ActionNotAllowed, match="not supported on jw PC"):
             await call
 
@@ -350,3 +350,17 @@ async def test_terminate_refused_when_live_process_changed():
     with pytest.raises(KeyError):
         dev._act(program, "stop")
     assert not proc.terminated
+
+
+async def test_docker_group_restart():
+    row = (
+        '{{"Names":"{n}","State":"running","Image":"x","RunningFor":"2 hours ago",'
+        '"Labels":"com.docker.compose.project=studio","Status":"Up"}}'
+    )
+    rows = "".join(row.format(n=n) + "\n" for n in ("api", "web"))
+    run = Recorder({NO_DOCKER: RunResult(0, "ok", ""), PS_ARGV: RunResult(0, rows, "")})
+    dev = make(run=run)
+    assert (await dev.group_restart("studio")).ok
+    assert ["docker", "restart", "api", "web"] in run.calls
+    with pytest.raises(KeyError):
+        await dev.group_restart("nope")
