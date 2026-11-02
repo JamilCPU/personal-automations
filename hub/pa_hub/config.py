@@ -5,7 +5,7 @@ import tomllib
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 DEFAULT_PORT = 7700
 DEFAULT_TIMEOUT_S = 3.0
@@ -38,7 +38,8 @@ class DeviceEntry(BaseModel):
 
 
 class HubConfig(BaseModel):
-    bind: str
+    # One or more listen addresses: the LAN IP plus 127.0.0.1 for local tools.
+    bind: list[str]
     port: int = DEFAULT_PORT
     cert_file: str
     key_file: str
@@ -47,6 +48,11 @@ class HubConfig(BaseModel):
     db_path: str = Field(default_factory=default_db_path)
     timeout_s: float = DEFAULT_TIMEOUT_S
     action_timeout_s: float = DEFAULT_ACTION_TIMEOUT_S
+
+    @field_validator("bind", mode="before")
+    @classmethod
+    def _bind_list(cls, value: object) -> object:
+        return [value] if isinstance(value, str) else value
 
 
 def _expand(value: str | None) -> str | None:
