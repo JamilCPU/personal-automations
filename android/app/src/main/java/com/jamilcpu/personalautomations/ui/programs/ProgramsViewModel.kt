@@ -37,7 +37,7 @@ data class ProgramsUiState(
 
 /** Explicit empty-state text once a fetch has completed with nothing to show; null otherwise. */
 fun ProgramsUiState.emptyMessage(): String? {
-    if (!loaded || refreshing || programs.isNotEmpty()) return null
+    if (!loaded || refreshing || stale || error != null || programs.isNotEmpty()) return null
     val where = deviceFilter?.let { " on ${deviceLabel(it)}" }.orEmpty()
     val hidden = if (hideSystem) " (system programs hidden)" else ""
     return "No programs$where$hidden"
