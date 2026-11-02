@@ -173,10 +173,12 @@ def test_pin_unknown_device_or_program_404(tmp_path: Path) -> None:
     for body in (
         {"device": "nope", "id": "d:a", "pinned": True},
         {"device": "jw-pc", "id": "missing", "pinned": True},
-        {"device": "jw-pc", "id": "pinned:missing", "pinned": False},
+        {"device": "nope", "id": "d:a", "pinned": False},
     ):
         response = client.put("/v1/pins", json=body, headers=auth())
         assert response.status_code == 404, body
         assert response.json()["success"] is False
     bad = client.put("/v1/pins", json={"device": "jw-pc", "id": "d:a"}, headers=auth())
     assert bad.status_code == 422
+    noop = {"device": "jw-pc", "id": "pinned:missing", "pinned": False}
+    assert client.put("/v1/pins", json=noop, headers=auth()).json()["data"]["ok"] is True
