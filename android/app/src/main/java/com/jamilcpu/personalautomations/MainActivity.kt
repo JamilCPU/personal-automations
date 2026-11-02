@@ -232,6 +232,7 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
                         onFilter = programsVm::setFilter,
                         onHideSystem = programsVm::setHideSystem,
                         onRefresh = programsVm::refresh,
+                        onTogglePin = programsVm::togglePin,
                         onOpenProgram = { device, id ->
                             navController.navigate("program/${Uri.encode(device)}/${Uri.encode(id)}")
                         },
@@ -272,6 +273,7 @@ private fun ProgramDetailRoute(api: HubApi, device: String, id: String) {
         onAct = vm::act,
         onRefresh = vm::load,
         onRefreshLogs = vm::refreshLogs,
+        onTogglePin = vm::togglePin,
     )
 }
 

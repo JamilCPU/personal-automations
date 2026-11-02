@@ -43,8 +43,13 @@ fun ProgramsUiState.emptyMessage(): String? {
     return "No programs$where$hidden"
 }
 
+/** Pinned programs first; otherwise the hub's order (stable sort). */
+fun List<Program>.pinnedFirst(): List<Program> = sortedBy { !it.pinned }
+
 val ProgramsUiState.banner: String?
     get() = if (stale) HUB_UNREACHABLE else if (loaded) error else null
+
+const val PIN_FAILED = "Could not change the pin"
 
 class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) : ViewModel() {
     private val _state = MutableStateFlow(ProgramsUiState())
@@ -98,6 +103,32 @@ class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) 
         refresh()
     }
 
+    /** Pin or unpin: shown at once, rolled back with a banner if the hub refuses. */
+    fun togglePin(program: Program) {
+        val target = !program.pinned
+        setPinnedLocally(program, target)
+        viewModelScope.launch {
+            val failure = when (val result = api.setPinned(program.device, program.id, target)) {
+                is HubResult.Ok -> result.value.takeIf { !it.ok }?.message?.ifBlank { PIN_FAILED }
+                is HubResult.Err -> result.message
+            }
+            if (failure == null) {
+                // The hub decides placement (placeholders, hidden system programs): reload.
+                refresh()
+            } else {
+                setPinnedLocally(program, !target)
+                _state.update { it.copy(error = failure) }
+            }
+        }
+    }
+
+    private fun setPinnedLocally(program: Program, pinned: Boolean) = _state.update { s ->
+        val programs = s.programs.map {
+            if (it.device == program.device && it.id == program.id) it.copy(pinned = pinned) else it
+        }
+        s.copy(programs = programs.pinnedFirst())
+    }
+
     /** Fetch now (pull to refresh, Retry, filter change). */
     fun refresh() {
         _state.update { it.copy(refreshing = true) }
@@ -115,7 +146,7 @@ class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) 
             is HubResult.Ok -> _state.update {
                 it.copy(
                     loading = false, loaded = true, stale = false, error = null, refreshing = false,
-                    programs = result.value.filterBy(device),
+                    programs = result.value.filterBy(device).pinnedFirst(),
                 )
             }
             is HubResult.Err -> _state.update {

@@ -8,6 +8,7 @@ import com.jamilcpu.personalautomations.data.ProgramDetail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
@@ -170,5 +171,62 @@ class ProgramDetailViewModelTest {
         runCurrent()
         assertFalse(vm.state.value.stale)
         assertEquals("hub exploded", vm.state.value.error)
+    }
+
+    @Test
+    fun pinned_placeholder_404_shows_not_running_with_pin() = runTest(dispatcher) {
+        val hub = FakePrograms()
+        hub.detail = HubResult.Err("unknown program", 404)
+        val vm = ProgramDetailViewModel(hub, "jw-pc", "pinned:process:Discord")
+        vm.load()
+        runCurrent()
+        val s = vm.state.value
+        assertTrue(s.placeholder)
+        assertFalse(s.gone)
+        assertNull(s.error)
+        assertEquals("Discord", s.program?.name)
+        assertEquals("process", s.program?.kind)
+        assertEquals("Not running", s.program?.description)
+        assertEquals(true, s.program?.pinned)
+        assertEquals(emptyList<String>(), vm.visibleActions())
+    }
+
+    @Test
+    fun detail_toggle_pin_optimistic_and_rollback() = runTest(dispatcher) {
+        val (vm, hub) = vmFor(prog("a"))
+        vm.load()
+        runCurrent()
+        hub.pinDelay = 1_000
+        vm.togglePin()
+        runCurrent()
+        assertEquals(true, vm.state.value.program?.pinned)
+        assertEquals(listOf(Triple("robot-pi", "a", true)), hub.pinCalls)
+        advanceUntilIdle()
+
+        hub.detail = HubResult.Ok(ProgramDetail(prog("a", pinned = true)))
+        vm.load()
+        runCurrent()
+        hub.pinResult = HubResult.Err("boom", 500)
+        hub.pinDelay = 0
+        vm.togglePin()
+        runCurrent()
+        // Rolled back to pinned, with the failure shown.
+        assertEquals(true, vm.state.value.program?.pinned)
+        assertEquals("boom", vm.state.value.error)
+    }
+
+    @Test
+    fun unpinning_placeholder_keeps_it_unpinned_without_reload() = runTest(dispatcher) {
+        val hub = FakePrograms()
+        hub.detail = HubResult.Err("unknown program", 404)
+        val vm = ProgramDetailViewModel(hub, "jw-pc", "pinned:process:Discord")
+        vm.load()
+        runCurrent()
+        val before = hub.detailCalls
+        vm.togglePin()
+        runCurrent()
+        assertEquals(false, vm.state.value.program?.pinned)
+        assertEquals(before, hub.detailCalls)
+        assertEquals(listOf(Triple("jw-pc", "pinned:process:Discord", false)), hub.pinCalls)
     }
 }
