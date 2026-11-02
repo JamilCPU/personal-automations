@@ -243,3 +243,9 @@ async def test_agent_header_sent_on_actions(hub) -> None:
     async with create_connected_server_and_client_session(_server(), client_info=info) as session:
         await session.call_tool("reboot_device", {"device": "pi3"})
     assert route.calls.last.request.headers["x-pa-agent"] == "codex"
+
+
+def test_http_host_defaults_to_hub_lan_ip() -> None:
+    from pa_mcp.server import _build_parser
+
+    assert _build_parser().parse_args(["--http"]).host == "192.168.0.197"

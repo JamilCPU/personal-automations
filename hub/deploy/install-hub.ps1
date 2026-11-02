@@ -2,7 +2,9 @@
 .SYNOPSIS
   Installs (or removes) the Personal Automations hub autostart on Windows.
 .DESCRIPTION
-  Run from an elevated PowerShell. Idempotent: re-running replaces the task and rule.
+  Run on jw (the MC Server PC, 192.168.0.197), from an elevated PowerShell. Idempotent:
+  re-running replaces the task and rule. The hub binds the LAN IP in hub.toml (`bind`) plus
+  127.0.0.1; the MCP task binds 192.168.0.197 (see run-mcp-http.ps1 -BindHost).
     - Scheduled task "Personal Automations Hub": at logon of the current user, highest
       privileges, restarts on failure, runs `uv run --project <repo> pa-hub serve`.
     - Scheduled task "Personal Automations MCP": same trigger and settings, runs

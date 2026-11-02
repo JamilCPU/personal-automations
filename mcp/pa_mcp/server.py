@@ -19,7 +19,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 READ_TIMEOUT_S = 5.0
 ACTION_TIMEOUT_S = 35.0
-DEFAULT_HTTP_HOST = "127.0.0.1"
+DEFAULT_HTTP_HOST = "192.168.0.197"  # jw, the hub host; the HTTP server binds the hub IP
 DEFAULT_HTTP_PORT = 7702
 TOKEN_BYTES = 32
 HTTP_ERROR_STATUS = 400

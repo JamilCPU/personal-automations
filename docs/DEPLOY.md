@@ -20,12 +20,12 @@ From Git Bash on Windows prefix with `MSYS_NO_PATHCONV=1 wsl.exe -e bash /mnt/f/
 | `agent/deploy/personal-automations.sudoers` | `/etc/sudoers.d/personal-automations`: `systemctl start/stop/restart *`, `systemctl reboot`, `lidar-power on/off/status`. Checked with `visudo -cf` before it goes live. |
 | `agent/deploy/k3s-rbac.yaml` | ServiceAccount `pa-agent` in `lab`, pod get/list/delete + `pods/log` in `lab`, cluster-wide pod get/list, and a token Secret. `--k3s` builds `/etc/personal-automations/kubeconfig` from that token (server `https://127.0.0.1:6443`). |
 
-On each Pi: `/etc/personal-automations/{agent.toml,cert.pem,key.pem[,kubeconfig]}` (mode 600, owner `pa-agent`). The config has `hub_ip = 192.168.0.99`; only that address is served (IPv4-mapped IPv6 is treated as IPv4).
+On each Pi: `/etc/personal-automations/{agent.toml,cert.pem,key.pem[,kubeconfig]}` (mode 600, owner `pa-agent`). The config has `hub_ip = 192.168.0.197` (jw, the hub host; override with `PA_HUB_IP`); only that address is served (IPv4-mapped IPv6 is treated as IPv4).
 
 ## Secrets
 
 The script saves each agent's `cert.pem` and `token` outside the repo, in
-`C:\Users\jamil\AppData\Local\personal-automations\agents\<device-id>\` (override with `PA_SECRETS_DIR`). The token is only generated on first init; the token is printed only with `--show-token`. The hub reads these files.
+`C:\Users\jamil\AppData\Local\personal-automations\agents\<device-id>\` (override with `PA_SECRETS_DIR`). The token is only generated on first init; the token is printed only with `--show-token`. Copy them to jw's `%LOCALAPPDATA%\personal-automations\agents\<device-id>\` (the hub runs there) and register them with `pa-hub add-agent` ([INSTALL.md](INSTALL.md) section 2).
 
 ## Notes
 

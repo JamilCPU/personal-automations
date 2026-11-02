@@ -51,11 +51,11 @@ Program ids that start with `k3s:` are routed to the k3s source device (Pi1) whi
 pa://pair?url=<url>&token=<token>&fp=<sha256>
 ```
 
-Every value is percent-encoded (for example `url=https%3A%2F%2F192.168.0.99%3A7700`). `fp` is the lowercase hex SHA-256 of the hub certificate (DER). The app must trust only a certificate with that fingerprint.
+Every value is percent-encoded (for example `url=https%3A%2F%2F192.168.0.197%3A7700`). `fp` is the lowercase hex SHA-256 of the hub certificate (DER). The app must trust only a certificate with that fingerprint.
 
 ## CLI
 
-- `pa-hub init [--ip 192.168.0.99] [--out DIR]` writes `hub.toml`, `hub.secrets.toml` (tokens for `phone`, `mcp-stdio`, `mcp-http`), and `hub/cert.pem` + `hub/key.pem` (SANs: the IP and 127.0.0.1). Default `DIR` is `%LOCALAPPDATA%\personal-automations`. Never overwrites.
+- `pa-hub init [--ip 192.168.0.197] [--out DIR]` writes `hub.toml`, `hub.secrets.toml` (tokens for `phone`, `mcp-stdio`, `mcp-http`), and `hub/cert.pem` + `hub/key.pem` (SANs: the IP and 127.0.0.1). `hub.toml` gets `bind = ["<ip>", "127.0.0.1"]`: the hub listens on the LAN IP and on loopback for local tools, not on every interface. `bind` also accepts a single string (for example `"0.0.0.0"`, then rely on the firewall rule). Default `DIR` is `%LOCALAPPDATA%\personal-automations`. Never overwrites.
 - `pa-hub add-agent --device ID [--cert PATH --token T]` copies the agent's cert and token into `agents/<id>/`, or verifies they are already there.
 - `pa-hub serve [--config hub.toml]`.
 - `pa-hub pair --client NAME [--url URL]`.
@@ -70,9 +70,9 @@ From an elevated PowerShell: `hub\deploy\install-hub.ps1` (task at logon, firewa
 
 `pa-mcp` (package `mcp/`) exposes the same actions as MCP tools: `list_devices`, `get_device`, `list_programs`, `get_program`, `get_program_logs`, `program_action`, `restart_group`, `get_usb_power`, `set_usb_power`, `reboot_device`, `recent_history`. Each returns the hub's `data` or raises a tool error carrying the hub's `error` text. There is no confirmation step.
 
-Environment: `PA_HUB_URL` (for example `https://192.168.0.99:7700`), `PA_HUB_TOKEN` (the `mcp-stdio` client token for stdio, `mcp-http` for the HTTP server), `PA_HUB_CERT` (path to the hub `cert.pem`, pinned).
+Environment: `PA_HUB_URL` (for example `https://192.168.0.197:7700`), `PA_HUB_TOKEN` (the `mcp-stdio` client token for stdio, `mcp-http` for the HTTP server), `PA_HUB_CERT` (path to the hub `cert.pem`, pinned).
 
 - stdio (local agents): `uv run --project <repo> pa-mcp`. Registered for Claude Code with `claude mcp add personal-automations -s user -e ... -- uv run --project <repo> pa-mcp`.
-- Streamable HTTP (agents on other machines): `pa-mcp --http --host 192.168.0.99 --port 7702` serves `/mcp` over TLS and requires `Authorization: Bearer $PA_MCP_HTTP_TOKEN`; it refuses to start without that variable. Make a token with `pa-mcp gen-token`, then `setx PA_MCP_HTTP_TOKEN <token>`. `install-hub.ps1` also installs a "Personal Automations MCP" scheduled task for this (`run-mcp-http.ps1`).
+- Streamable HTTP (agents on other machines): `pa-mcp --http [--host 192.168.0.197] [--port 7702]` (the host defaults to the hub's LAN IP) serves `/mcp` over TLS and requires `Authorization: Bearer $PA_MCP_HTTP_TOKEN`; it refuses to start without that variable. Make a token with `pa-mcp gen-token`, then `setx PA_MCP_HTTP_TOKEN <token>`. `install-hub.ps1` also installs a "Personal Automations MCP" scheduled task for this (`run-mcp-http.ps1`).
 
-The HTTP transport uses TLS: `PA_MCP_TLS_CERT` / `PA_MCP_TLS_KEY` default to the hub's `%LOCALAPPDATA%\personal-automations\hub\cert.pem` / `key.pem` (SAN 192.168.0.99), and `--http` refuses to start if either is missing. Clients connect to `https://192.168.0.99:7702/mcp` and pin that certificate.
+The HTTP transport uses TLS: `PA_MCP_TLS_CERT` / `PA_MCP_TLS_KEY` default to the hub's `%LOCALAPPDATA%\personal-automations\hub\cert.pem` / `key.pem` (SANs 192.168.0.197 and 127.0.0.1), and `--http` refuses to start if either is missing. Clients connect to `https://192.168.0.197:7702/mcp` and pin that certificate.

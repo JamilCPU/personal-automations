@@ -6,7 +6,8 @@
 #   [device_tokens]          # optional; overrides token_file
 #   pi1 = "<agent token>"
 # %VAR% and ~ in cert_file/key_file/token_file are expanded at load time.
-bind = "0.0.0.0"
+# LAN IP + loopback (local tools). The LAN IP is replaced by `pa-hub init --ip`.
+bind = ["192.168.0.197", "127.0.0.1"]
 port = 7700
 cert_file = '%LOCALAPPDATA%\personal-automations\hub\cert.pem'
 key_file = '%LOCALAPPDATA%\personal-automations\hub\key.pem'
@@ -16,8 +17,8 @@ timeout_s = 3.0
 [[devices]]
 id = "jw-pc"
 name = "jw PC"
-role = "Workstation · the hub"
-ip = "192.168.0.99"
+role = "MC Server PC · the hub"
+ip = "192.168.0.197"
 kind = "local"
 capabilities = []
 

@@ -6,7 +6,7 @@
 # Secrets (cert.pem, token) are saved outside the repo in $PA_SECRETS_DIR/<device-id>/.
 set -euo pipefail
 
-HUB_IP="${PA_HUB_IP:-192.168.0.99}"
+HUB_IP="${PA_HUB_IP:-192.168.0.197}"  # jw (MC Server PC) hosts the hub
 SSH_USER="${PA_SSH_USER:-jamil}"
 SECRETS_DIR="${PA_SECRETS_DIR:-/mnt/c/Users/jamil/AppData/Local/personal-automations/agents}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

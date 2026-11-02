@@ -4,6 +4,7 @@ import argparse
 import logging
 import secrets
 import shutil
+import socket
 import sys
 from pathlib import Path
 
@@ -22,7 +23,7 @@ CONFIG_NAME = "hub.toml"
 SECRETS_NAME = "hub.secrets.toml"
 EXAMPLE_PATH = Path(__file__).resolve().parent.parent / "hub.example.toml"
 EXAMPLE_HOME = r"%LOCALAPPDATA%\personal-automations"
-EXAMPLE_IP = "192.168.0.99"
+EXAMPLE_IP = "192.168.0.197"
 LOOPBACK = "127.0.0.1"
 INIT_CLIENTS = ("phone", "mcp-stdio", "mcp-http")
 
@@ -154,6 +155,19 @@ def cmd_pair(args: argparse.Namespace) -> int:
     return 0
 
 
+def listen_sockets(hosts: list[str], port: int) -> list[socket.socket]:
+    """One listening socket per distinct host (uvicorn itself binds only one address)."""
+    socks: list[socket.socket] = []
+    try:
+        for host in dict.fromkeys(hosts):
+            socks.append(socket.create_server((host, port)))
+    except OSError:
+        for sock in socks:
+            sock.close()
+        raise
+    return socks
+
+
 def cmd_serve(args: argparse.Namespace) -> int:
     logging.basicConfig(level=logging.INFO)
     config_path, secrets_path = _paths(args.config)
@@ -161,13 +175,10 @@ def cmd_serve(args: argparse.Namespace) -> int:
     service, closers = build_service(cfg)
     names = {entry.id: entry.name for entry in cfg.devices}
     app = create_app(service, cfg.clients, names, closers)
-    uvicorn.run(
-        app,
-        host=cfg.bind,
-        port=cfg.port,
-        ssl_certfile=cfg.cert_file,
-        ssl_keyfile=cfg.key_file,
+    config = uvicorn.Config(
+        app, port=cfg.port, ssl_certfile=cfg.cert_file, ssl_keyfile=cfg.key_file
     )
+    uvicorn.Server(config).run(sockets=listen_sockets(cfg.bind, cfg.port))
     return 0
 
 
