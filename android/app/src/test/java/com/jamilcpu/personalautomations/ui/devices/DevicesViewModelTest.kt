@@ -191,4 +191,18 @@ class DevicesViewModelTest {
         assertEquals(listOf(pi), vm.state.value.devices)
         vm.stop()
     }
+
+    @Test
+    fun hub_error_after_load_is_not_unreachable() = runTest(dispatcher) {
+        val hub = FakeHub().apply { devices = HubResult.Ok(listOf(pi)) }
+        val vm = DevicesViewModel(hub)
+        vm.start()
+        runCurrent()
+        hub.devices = HubResult.Err("hub exploded", 503)
+        advanceTimeBy(5_001)
+        assertFalse(vm.state.value.stale)
+        assertEquals("hub exploded", vm.state.value.banner)
+        assertEquals(listOf(pi), vm.state.value.devices)
+        vm.stop()
+    }
 }

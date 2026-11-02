@@ -85,7 +85,7 @@ class ProgramDetailViewModel(
                 _state.update {
                     it.copy(
                         loading = false, program = detail.value.program, history = detail.value.history,
-                        logs = logs ?: it.logs, stale = false, gone = false,
+                        logs = logs ?: it.logs, stale = false, gone = false, error = null,
                     )
                 }
             }

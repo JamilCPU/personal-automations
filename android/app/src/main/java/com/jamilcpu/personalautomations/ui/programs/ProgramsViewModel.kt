@@ -7,7 +7,9 @@ import com.jamilcpu.personalautomations.data.HubClient
 import com.jamilcpu.personalautomations.data.HubResult
 import com.jamilcpu.personalautomations.data.Program
 import com.jamilcpu.personalautomations.data.UiPrefs
+import com.jamilcpu.personalautomations.ui.common.HUB_UNREACHABLE
 import com.jamilcpu.personalautomations.ui.devices.POLL_INTERVAL_MS
+import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -23,12 +25,15 @@ data class ProgramsUiState(
     val programs: List<Program> = emptyList(),
     val deviceFilter: String? = null,
     val hideSystem: Boolean = true,
-    /** Load failure while nothing has been loaded yet (drives the empty/error state). */
+    /** Load failure: the empty/error state when nothing has loaded, else a banner over the old data. */
     val error: String? = null,
     /** A poll failed after data had loaded: keep showing it, grey out actions, show the banner. */
     val stale: Boolean = false,
     val loaded: Boolean = false,
 )
+
+val ProgramsUiState.banner: String?
+    get() = if (stale) HUB_UNREACHABLE else if (loaded) error else null
 
 class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) : ViewModel() {
     private val _state = MutableStateFlow(ProgramsUiState())
@@ -38,7 +43,12 @@ class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) 
 
     init {
         viewModelScope.launch {
-            val stored = prefs.hideSystem.first()
+            // A DataStore read failure falls back to the default (hide system programs).
+            val stored = try {
+                prefs.hideSystem.first()
+            } catch (_: IOException) {
+                true
+            }
             _state.update { it.copy(hideSystem = stored) }
             prefsLoaded.complete(Unit)
         }
@@ -92,7 +102,11 @@ class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) 
                 )
             }
             is HubResult.Err -> _state.update {
-                if (it.loaded) it.copy(stale = true) else it.copy(loading = false, error = result.message)
+                when {
+                    // Only a network failure (code 0) means the hub is unreachable.
+                    result.code == 0 && it.loaded -> it.copy(stale = true)
+                    else -> it.copy(loading = false, stale = false, error = result.message)
+                }
             }
         }
     }

@@ -145,4 +145,30 @@ class ProgramDetailViewModelTest {
         assertEquals("a", vm.state.value.program?.id)
         assertNull(vm.state.value.error)
     }
+
+    @Test
+    fun successful_load_clears_stale_error() = runTest(dispatcher) {
+        val (vm, hub) = vmFor(prog("a"))
+        vm.load()
+        runCurrent()
+        hub.actResult = HubResult.Err("boom", 409)
+        vm.act("start")
+        runCurrent()
+        assertEquals("boom", vm.state.value.error)
+        vm.load()
+        runCurrent()
+        assertNull(vm.state.value.error)
+    }
+
+    @Test
+    fun hub_error_after_load_shows_message_not_stale() = runTest(dispatcher) {
+        val (vm, hub) = vmFor(prog("a"))
+        vm.load()
+        runCurrent()
+        hub.detail = HubResult.Err("hub exploded", 503)
+        vm.load()
+        runCurrent()
+        assertFalse(vm.state.value.stale)
+        assertEquals("hub exploded", vm.state.value.error)
+    }
 }
