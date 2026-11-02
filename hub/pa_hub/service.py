@@ -125,6 +125,21 @@ class HubService:
             return _Snapshot()
         return _Snapshot(health=health, programs=programs, usb=usb)
 
+    async def _listing(self, device_id: str) -> list[Program]:
+        programs = await self._listing_call(device_id, self._clients[device_id].programs())
+        return programs or []
+
+    def _program_sources(self, device: str | None) -> list[str]:
+        """Clients that can return programs for `device` (k3s pods come from the k3s source)."""
+        if device is None:
+            return [i for i in self._entries if i in self._clients]
+        sources = [device]
+        source = self._k3s_source
+        is_pi = self._entries[device].kind != "local"
+        if source and source != device and source in self._clients and is_pi:
+            sources.append(source)
+        return sources
+
     async def _snapshots(self) -> dict[str, _Snapshot]:
         ids = [i for i in self._entries if i in self._clients]
         results = await asyncio.gather(*(self._snapshot(i) for i in ids))
@@ -209,8 +224,8 @@ class HubService:
     async def programs(self, device: str | None, include_system: bool) -> list[Program]:
         if device is not None:
             self._client(device)
-        snaps = await self._snapshots()
-        merged = [p for s in snaps.values() for p in s.programs]
+        lists = await asyncio.gather(*(self._listing(i) for i in self._program_sources(device)))
+        merged = [p for programs in lists for p in programs]
         if device is not None:
             merged = [p for p in merged if p.device == device]
         if not include_system:
