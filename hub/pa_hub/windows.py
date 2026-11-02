@@ -209,6 +209,7 @@ class LocalWindowsDevice:
         self._sleep = sleep
         self._clock = clock
         self._now = now
+        self._gen = 0
         self._programs_lock = threading.Lock()
         self._programs_cache: tuple[float, list[Program]] | None = None
         self._health_lock = threading.Lock()
@@ -337,11 +338,14 @@ class LocalWindowsDevice:
     # ---- DeviceClient --------------------------------------------------
 
     def _invalidate_caches(self) -> None:
-        """Drop cached listings after a mutation so the next read reflects it."""
-        with self._programs_lock:
-            self._programs_cache = None
-        with self._health_lock:
-            self._health_cache = None
+        """Drop cached listings after a mutation, without taking the (long-held) cache locks.
+
+        The generation bump also stops an enumeration that began before the mutation from
+        repopulating the cache with a pre-mutation snapshot.
+        """
+        self._gen += 1
+        self._programs_cache = None
+        self._health_cache = None
 
     def _cached_programs(self) -> list[Program]:
         """One shared enumeration per TTL; concurrent callers wait on the lock and reuse it."""
@@ -349,8 +353,10 @@ class LocalWindowsDevice:
             cached = self._programs_cache
             if cached is not None and self._clock() - cached[0] < PROGRAMS_TTL_S:
                 return list(cached[1])
+            gen = self._gen
             programs = self._all_programs()
-            self._programs_cache = (self._clock(), programs)
+            if gen == self._gen:
+                self._programs_cache = (self._clock(), programs)
             return list(programs)
 
     async def programs(self) -> list[Program]:
@@ -422,8 +428,10 @@ class LocalWindowsDevice:
             cached = self._health_cache
             if cached is not None and self._clock() - cached[0] < HEALTH_TTL_S:
                 return cached[1]
+            gen = self._gen
             health = self._health()
-            self._health_cache = (self._clock(), health)
+            if gen == self._gen:
+                self._health_cache = (self._clock(), health)
             return health
 
     async def health(self) -> Health:
