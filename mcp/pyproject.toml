@@ -1,0 +1,19 @@
+[project]
+name = "pa-mcp"
+version = "0.1.0"
+description = "Personal Automations MCP server (drives the lab through the hub API)"
+requires-python = ">=3.11"
+dependencies = [
+    "mcp>=1.2,<2",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+pa-mcp = "pa_mcp.server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["pa_mcp"]
