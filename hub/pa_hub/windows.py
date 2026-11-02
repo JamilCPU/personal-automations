@@ -18,6 +18,7 @@ from pa_core.policy import (
     allowed_actions,
     check_action,
     is_system,
+    is_system_exe,
     protection_for,
 )
 from pa_core.runner import Runner, run
@@ -98,11 +99,14 @@ def enum_windowed_pids() -> dict[int, str]:
     return found
 
 
-def _under_windows_dir(exe_path: object) -> bool:
-    """True when the executable lives under the Windows directory (case-insensitive)."""
-    if not isinstance(exe_path, str) or not exe_path:
-        return False
-    return exe_path.replace("/", "\\").lower().startswith(SYSTEM_ROOT.lower() + "\\")
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _exe_stem(exe: str) -> str:
+    """`discord.exe` -> `Discord`: a stable display name (window titles change constantly)."""
+    stem = ntpath.splitext(exe)[0]
+    return stem[:1].upper() + stem[1:]
 
 
 def _script_name(cmdline: list[str]) -> str | None:
@@ -236,16 +240,21 @@ class LocalWindowsDevice:
             binpath = None
         status = _STATUS.get(str(svc.status()).lower(), "unknown")
         protection = protection_for("windows-service", name)
+        display = svc.display_name() or ""
+        system = is_system(
+            "windows-service", name, binary_path=binpath, status=status, display_name=display
+        )
         return Program(
             id=f"{SERVICE_PREFIX}{name}",
-            name=svc.display_name() or name,
+            name=display or name,
             kind="windows-service",
             device=self.device_id,
             status=status,
-            system=is_system("windows-service", name, binary_path=binpath),
+            system=system,
             protection=protection,
             actions=allowed_actions("windows-service", status, protection),
             detail={"service": name, "binary": binpath or ""},
+            pin_key=f"{SERVICE_PREFIX}{name}",
         )
 
     def _snapshot(self) -> dict[int, dict[str, Any]]:
@@ -299,9 +308,15 @@ class LocalWindowsDevice:
         if not (pid in windowed or (interpreter and age >= MIN_AGE_S)):
             return None
         script = _script_name(info.get("cmdline") or []) if interpreter else None
-        name = script or windowed.get(pid) or exe or str(pid)
+        window = windowed.get(pid, "")
+        name = script or _exe_stem(exe) or str(pid)
         protection = "locked" if locked else protection_for("process", name)
+        # The hub's own tree is plumbing; an interpreter's location says nothing about its script.
+        system = locked or (not interpreter and is_system_exe(_text(info.get("exe"))))
         stamp = str(int(created))
+        detail = {"pid": str(pid), "exe": exe, "create_time": stamp}
+        if window:
+            detail["window"] = window
         return Program(
             id=f"{PROCESS_PREFIX}{name}#{pid}@{stamp}",
             name=name,
@@ -309,11 +324,12 @@ class LocalWindowsDevice:
             device=self.device_id,
             status="running",
             uptime_s=age,
-            description=exe,
-            system=_under_windows_dir(info.get("exe")),
+            description=window or exe,
+            system=system,
             protection=protection,
             actions=allowed_actions("process", "running", protection),
-            detail={"pid": str(pid), "exe": exe, "create_time": stamp},
+            detail=detail,
+            pin_key=f"{PROCESS_PREFIX}{name}",
         )
 
     def _docker_programs(self) -> list[Program]:
