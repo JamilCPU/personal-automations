@@ -141,4 +141,76 @@ class ProgramsViewModelTest {
         assertEquals(2, vm.state.value.programs.size)
         vm.stop()
     }
+
+    @Test
+    fun filter_switch_from_specific_device_clears_and_shows_refreshing_then_data() = runTest(dispatcher) {
+        val hub = FakePrograms(all)
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        vm.setFilter("robot-pi")
+        runCurrent()
+        hub.delays["pi1"] = 3_000
+        vm.setFilter("pi1")
+        runCurrent()
+        assertTrue(vm.state.value.refreshing)
+        assertTrue(vm.state.value.programs.isEmpty())
+        assertNull(vm.state.value.emptyMessage())
+        advanceTimeBy(3_001)
+        assertFalse(vm.state.value.refreshing)
+        assertEquals(listOf("b"), vm.state.value.programs.map { it.id })
+        vm.stop()
+    }
+
+    @Test
+    fun filter_switch_from_all_keeps_filtered_old_list_while_refreshing() = runTest(dispatcher) {
+        val hub = FakePrograms(all)
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        hub.delays["pi1"] = 3_000
+        vm.setFilter("pi1")
+        runCurrent()
+        assertTrue(vm.state.value.refreshing)
+        assertEquals(listOf("b"), vm.state.value.programs.map { it.id })
+        advanceTimeBy(3_001)
+        assertFalse(vm.state.value.refreshing)
+        vm.stop()
+    }
+
+    @Test
+    fun rapid_switches_end_with_last_filter_data_and_not_refreshing() = runTest(dispatcher) {
+        val hub = FakePrograms(all)
+        hub.delays["robot-pi"] = 3_000
+        hub.delays["pi1"] = 1_000
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        vm.setFilter("robot-pi")
+        runCurrent()
+        vm.setFilter("pi1")
+        runCurrent()
+        advanceTimeBy(3_500)
+        assertEquals("pi1", vm.state.value.deviceFilter)
+        assertEquals(listOf("b"), vm.state.value.programs.map { it.id })
+        assertFalse(vm.state.value.refreshing)
+        vm.stop()
+    }
+
+    @Test
+    fun empty_result_shows_explicit_message() = runTest(dispatcher) {
+        val hub = FakePrograms(all)
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        vm.setFilter("pi3")
+        runCurrent()
+        assertTrue(vm.state.value.programs.isEmpty())
+        assertFalse(vm.state.value.refreshing)
+        assertEquals("No programs on Pi3 (system programs hidden)", vm.state.value.emptyMessage())
+        vm.setHideSystem(false)
+        runCurrent()
+        assertEquals("No programs on Pi3", vm.state.value.emptyMessage())
+        vm.stop()
+    }
 }

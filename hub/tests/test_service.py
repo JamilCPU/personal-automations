@@ -314,3 +314,43 @@ async def test_misbehaving_client_is_offline_not_500(tmp_path: Path, bad: FakeCl
     assert all(by_id[i].online for i in ("jw-pc", "pi1", "robot-pi"))
     ids = {p.id for p in await service.programs(None, include_system=True)}
     assert "d:a" in ids
+
+
+class CountingClient(FakeClient):
+    async def health(self) -> Health:
+        self.calls.append(("health",))
+        return await super().health()
+
+    async def programs(self) -> list[Program]:
+        self.calls.append(("programs",))
+        return await super().programs()
+
+
+async def test_device_filtered_programs_skip_unrelated_clients(tmp_path: Path) -> None:
+    jw = CountingClient([prog("d:a", "jw-pc")])
+    pi1 = CountingClient([prog("s:x", "pi1"), prog("k3s:lab/other@pi3", "pi3", name="other")])
+    pi3 = CountingClient([prog("s:p", "pi3", name="p")])
+    service, _ = standard(tmp_path, **{"jw-pc": jw, "pi1": pi1, "pi3": pi3})
+    ids = {p.id for p in await service.programs("pi3", include_system=True)}
+    assert ids == {"s:p", "k3s:lab/other@pi3"}
+    assert jw.calls == []
+    assert ("health",) not in pi1.calls + pi3.calls
+
+
+async def test_local_device_filter_skips_k3s_source(tmp_path: Path) -> None:
+    pi1 = CountingClient([prog("s:x", "pi1")])
+    service, _ = standard(tmp_path, pi1=pi1)
+    service._entries["jw-pc"] = entry("jw-pc").model_copy(update={"kind": "local"})
+    assert {p.id for p in await service.programs("jw-pc", include_system=True)} == {
+        "d:a",
+        "d:b",
+        "d:sys",
+    }
+    assert pi1.calls == []
+
+
+async def test_unfiltered_programs_skip_health(tmp_path: Path) -> None:
+    clients = {i: CountingClient([prog(f"p:{i}", i)]) for i in ("jw-pc", "pi1", "robot-pi", "pi3")}
+    service, _ = standard(tmp_path, **clients)
+    assert len(await service.programs(None, include_system=True)) == 4
+    assert all(c.calls == [("programs",)] for c in clients.values())

@@ -5,6 +5,7 @@ import ntpath
 import os
 import re
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterable
 from typing import Any
@@ -22,6 +23,8 @@ from pa_core.policy import (
 from pa_core.runner import Runner, run
 
 SYSTEM_ROOT = "C:\\Windows"
+PROGRAMS_TTL_S = 3.0
+HEALTH_TTL_S = 2.0
 RESTART_WAIT_S = 15.0
 RESTART_POLL_S = 1.0
 MIN_AGE_S = 600
@@ -206,6 +209,10 @@ class LocalWindowsDevice:
         self._sleep = sleep
         self._clock = clock
         self._now = now
+        self._programs_lock = threading.Lock()
+        self._programs_cache: tuple[float, list[Program]] | None = None
+        self._health_lock = threading.Lock()
+        self._health_cache: tuple[float, Health] | None = None
 
     # ---- listing -------------------------------------------------------
 
@@ -329,8 +336,18 @@ class LocalWindowsDevice:
 
     # ---- DeviceClient --------------------------------------------------
 
+    def _cached_programs(self) -> list[Program]:
+        """One shared enumeration per TTL; concurrent callers wait on the lock and reuse it."""
+        with self._programs_lock:
+            cached = self._programs_cache
+            if cached is not None and self._clock() - cached[0] < PROGRAMS_TTL_S:
+                return list(cached[1])
+            programs = self._all_programs()
+            self._programs_cache = (self._clock(), programs)
+            return list(programs)
+
     async def programs(self) -> list[Program]:
-        return await asyncio.to_thread(self._all_programs)
+        return await asyncio.to_thread(self._cached_programs)
 
     async def program(self, pid: str) -> Program:
         return await asyncio.to_thread(self._find, pid)
@@ -390,8 +407,17 @@ class LocalWindowsDevice:
             return ActionResult(ok=False, message=f"could not stop {name}: {exc}")
         return ActionResult(ok=True, message=f"stopped {name}")
 
+    def _cached_health(self) -> Health:
+        with self._health_lock:
+            cached = self._health_cache
+            if cached is not None and self._clock() - cached[0] < HEALTH_TTL_S:
+                return cached[1]
+            health = self._health()
+            self._health_cache = (self._clock(), health)
+            return health
+
     async def health(self) -> Health:
-        return await asyncio.to_thread(self._health)
+        return await asyncio.to_thread(self._cached_health)
 
     def _health(self) -> Health:
         p = self._procs

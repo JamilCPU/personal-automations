@@ -8,6 +8,7 @@ import com.jamilcpu.personalautomations.data.HubResult
 import com.jamilcpu.personalautomations.data.Program
 import com.jamilcpu.personalautomations.data.UiPrefs
 import com.jamilcpu.personalautomations.ui.common.HUB_UNREACHABLE
+import com.jamilcpu.personalautomations.ui.common.deviceLabel
 import com.jamilcpu.personalautomations.ui.devices.POLL_INTERVAL_MS
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
@@ -30,7 +31,17 @@ data class ProgramsUiState(
     /** A poll failed after data had loaded: keep showing it, grey out actions, show the banner. */
     val stale: Boolean = false,
     val loaded: Boolean = false,
+    /** A fetch triggered by a filter/toggle/refresh is in flight (poll ticks do not set this). */
+    val refreshing: Boolean = false,
 )
+
+/** Explicit empty-state text once a fetch has completed with nothing to show; null otherwise. */
+fun ProgramsUiState.emptyMessage(): String? {
+    if (!loaded || refreshing || programs.isNotEmpty()) return null
+    val where = deviceFilter?.let { " on ${deviceLabel(it)}" }.orEmpty()
+    val hidden = if (hideSystem) " (system programs hidden)" else ""
+    return "No programs$where$hidden"
+}
 
 val ProgramsUiState.banner: String?
     get() = if (stale) HUB_UNREACHABLE else if (loaded) error else null
@@ -72,18 +83,24 @@ class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) 
 
     fun setFilter(deviceId: String?) {
         if (_state.value.deviceFilter == deviceId) return
-        _state.update { it.copy(deviceFilter = deviceId, programs = it.programs.filterBy(deviceId)) }
+        _state.update {
+            // Only the unfiltered list is a superset of the new device's programs; otherwise
+            // clear, so the screen shows a spinner instead of a misleading blank/stale list.
+            val keep = if (it.deviceFilter == null) it.programs.filterBy(deviceId) else emptyList()
+            it.copy(deviceFilter = deviceId, programs = keep, refreshing = true)
+        }
         refresh()
     }
 
     fun setHideSystem(value: Boolean) {
-        _state.update { it.copy(hideSystem = value) }
+        _state.update { it.copy(hideSystem = value, refreshing = true) }
         viewModelScope.launch { prefs.setHideSystem(value) }
         refresh()
     }
 
     /** Fetch now (pull to refresh, Retry, filter change). */
     fun refresh() {
+        _state.update { it.copy(refreshing = true) }
         viewModelScope.launch { fetch() }
     }
 
@@ -97,15 +114,15 @@ class ProgramsViewModel(private val api: HubClient, private val prefs: UiPrefs) 
         when (result) {
             is HubResult.Ok -> _state.update {
                 it.copy(
-                    loading = false, loaded = true, stale = false, error = null,
+                    loading = false, loaded = true, stale = false, error = null, refreshing = false,
                     programs = result.value.filterBy(device),
                 )
             }
             is HubResult.Err -> _state.update {
                 when {
                     // Only a network failure (code 0) means the hub is unreachable.
-                    result.code == 0 && it.loaded -> it.copy(stale = true)
-                    else -> it.copy(loading = false, stale = false, error = result.message)
+                    result.code == 0 && it.loaded -> it.copy(stale = true, refreshing = false)
+                    else -> it.copy(loading = false, stale = false, error = result.message, refreshing = false)
                 }
             }
         }

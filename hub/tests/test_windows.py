@@ -364,3 +364,87 @@ async def test_docker_group_restart():
     assert ["docker", "restart", "api", "web"] in run.calls
     with pytest.raises(KeyError):
         await dev.group_restart("nope")
+
+
+class Clock:
+    def __init__(self):
+        self.t = 0.0
+
+    def __call__(self):
+        return self.t
+
+
+def cached_device(procs, clock, *, health=False):
+    fake = FakeProcs(procs)
+    counts = {"iter": 0}
+    original = fake.process_iter
+
+    def counting(attrs=None):
+        counts["iter"] += 1
+        return original(attrs)
+
+    fake.process_iter = counting
+    dev = LocalWindowsDevice(
+        run=Recorder(),
+        hub_pid=HUB_PID,
+        procs=fake,
+        services=lambda: iter([]),
+        windowed_pids=dict,
+        sleep=lambda _s: None,
+        clock=clock,
+        now=lambda: NOW,
+    )
+    return dev, counts
+
+
+async def test_programs_listing_cached_within_ttl_and_expires():
+    clock = Clock()
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev, counts = cached_device([proc], clock)
+    first = await dev.programs()
+    await dev.programs()
+    assert counts["iter"] == 1
+    clock.t = 3.5
+    again = await dev.programs()
+    assert counts["iter"] == 2
+    assert again == first
+
+
+async def test_concurrent_programs_share_one_enumeration():
+    import asyncio
+
+    clock = Clock()
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev, counts = cached_device([proc], clock)
+    await asyncio.gather(dev.programs(), dev.programs(), dev.programs())
+    assert counts["iter"] == 1
+
+
+async def test_act_bypasses_listing_cache():
+    clock = Clock()
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev, counts = cached_device([proc], clock)
+    (prog,) = await dev.programs()
+    assert counts["iter"] == 1
+    await dev.act(prog.id, "stop")
+    assert counts["iter"] == 2
+    assert proc.terminated
+
+
+async def test_health_cached_briefly():
+    clock = Clock()
+    dev, _ = cached_device([], clock)
+    calls = {"n": 0}
+    real = dev._health
+
+    def counting():
+        calls["n"] += 1
+        return real()
+
+    dev._health = counting
+    await dev.health()
+    await dev.health()
+    assert calls["n"] == 1
+    clock.t = 2.5
+    await dev.health()
+    assert calls["n"] == 2
