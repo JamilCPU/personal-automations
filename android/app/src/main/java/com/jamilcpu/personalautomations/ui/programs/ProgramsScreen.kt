@@ -40,6 +40,7 @@ import com.jamilcpu.personalautomations.data.Program
 import com.jamilcpu.personalautomations.ui.common.DEVICE_LABELS
 import com.jamilcpu.personalautomations.ui.common.HubBanner
 import com.jamilcpu.personalautomations.ui.common.LoadState
+import com.jamilcpu.personalautomations.ui.common.PinButton
 import com.jamilcpu.personalautomations.ui.common.StatusDot
 import com.jamilcpu.personalautomations.ui.common.deviceLabel
 import com.jamilcpu.personalautomations.ui.common.formatUptime
@@ -62,6 +63,7 @@ fun ProgramsScreen(
     onRefresh: () -> Unit,
     onOpenProgram: (device: String, id: String) -> Unit,
     modifier: Modifier = Modifier,
+    onTogglePin: (Program) -> Unit = {},
 ) {
     Column(modifier.fillMaxSize()) {
         var menuOpen by remember { mutableStateOf(false) }
@@ -108,7 +110,11 @@ fun ProgramsScreen(
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
                     items(state.programs, key = { it.device + "/" + it.id }) { program ->
-                        ProgramCard(program) { onOpenProgram(program.device, program.id) }
+                        ProgramCard(
+                            program = program,
+                            pinEnabled = !state.stale,
+                            onTogglePin = { onTogglePin(program) },
+                        ) { onOpenProgram(program.device, program.id) }
                     }
                 }
             }
@@ -132,7 +138,7 @@ private fun FilterRow(selected: String?, onFilter: (String?) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ProgramCard(program: Program, onClick: () -> Unit) {
+private fun ProgramCard(program: Program, pinEnabled: Boolean, onTogglePin: () -> Unit, onClick: () -> Unit) {
     Card(Modifier.fillMaxWidth().clickable(onClick = onClick)) {
         Row(
             Modifier.padding(16.dp),
@@ -145,6 +151,7 @@ private fun ProgramCard(program: Program, onClick: () -> Unit) {
                 Text(programSubtitle(program), style = MaterialTheme.typography.bodySmall)
             }
             AssistChip(onClick = onClick, label = { Text(deviceLabel(program.device)) })
+            PinButton(pinned = program.pinned, enabled = pinEnabled, onToggle = onTogglePin)
         }
     }
 }
