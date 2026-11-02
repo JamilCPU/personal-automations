@@ -7,6 +7,7 @@ import io.ktor.client.engine.mock.respond
 import io.ktor.client.engine.mock.toByteArray
 import io.ktor.client.request.HttpRequestData
 import io.ktor.client.request.HttpResponseData
+import io.ktor.client.plugins.HttpTimeoutCapability
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
@@ -101,5 +102,23 @@ class HubApiTest {
         assertEquals(HttpMethod.Put to "/v1/devices/pi1/usb", seen[1])
         assertEquals(HttpMethod.Post to "/v1/devices/pi1/reboot", seen[2])
         assertEquals(HttpMethod.Post to "/v1/devices/pi1/groups/my%20proj/restart", seen[3])
+    }
+
+    @Test
+    fun malformedSuccessBodyIsUnexpectedReply() = runTest {
+        val r = api { respond("""{"success":true,"data":"nope","error":null}""", HttpStatusCode.OK, json) }.devices()
+        assertEquals(HubResult.Err("Unexpected reply from the hub", 200), r)
+    }
+
+    @Test
+    fun mutatingCallsConfigureLongSocketTimeout() = runTest {
+        val socket = mutableListOf<Long?>()
+        val h = api { req ->
+            socket += req.getCapabilityOrNull(HttpTimeoutCapability)?.socketTimeoutMillis
+            respond("""{"success":true,"data":{"ok":true,"message":"m","on":true,"detail":"d"},"error":null}""", HttpStatusCode.OK, json)
+        }
+        h.act("pi1", "x", "start"); h.setUsb("pi1", true); h.reboot("pi1"); h.restartGroup("pi1", "p"); h.devices()
+        socket.take(4).forEach { assertTrue("socket timeout $it", (it ?: 0L) >= 35_000L) }
+        assertTrue((socket[4] ?: 0L) in 1L..10_000L)
     }
 }

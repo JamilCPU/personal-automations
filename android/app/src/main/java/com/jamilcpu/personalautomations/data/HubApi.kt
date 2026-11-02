@@ -20,12 +20,15 @@ import io.ktor.http.isSuccess
 import java.net.URLEncoder
 import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.serializer
 
 private const val READ_TIMEOUT_MS = 8_000L
 private const val ACTION_TIMEOUT_MS = 35_000L
+private const val CONNECT_TIMEOUT_MS = 5_000L
+private const val UNEXPECTED = "Unexpected reply from the hub"
 private const val UNREACHABLE = "Can't reach the hub"
 
 internal val hubJson = Json {
@@ -107,7 +110,11 @@ class HubApi(private val client: HttpClient, settings: HubSettings) {
     ): HubResult<T> = call(serializer<T>()) {
         client.get(base + path) {
             bearerAuth(token)
-            timeout { requestTimeoutMillis = READ_TIMEOUT_MS }
+            timeout {
+                requestTimeoutMillis = READ_TIMEOUT_MS
+                socketTimeoutMillis = READ_TIMEOUT_MS
+                connectTimeoutMillis = CONNECT_TIMEOUT_MS
+            }
             extra()
         }
     }
@@ -119,7 +126,11 @@ class HubApi(private val client: HttpClient, settings: HubSettings) {
     ): HubResult<T> = call(serializer<T>()) {
         val configure: HttpRequestBuilder.() -> Unit = {
             bearerAuth(token)
-            timeout { requestTimeoutMillis = ACTION_TIMEOUT_MS }
+            timeout {
+                requestTimeoutMillis = ACTION_TIMEOUT_MS
+                socketTimeoutMillis = ACTION_TIMEOUT_MS
+                connectTimeoutMillis = CONNECT_TIMEOUT_MS
+            }
             if (body != null) {
                 contentType(ContentType.Application.Json)
                 setBody(body)
@@ -138,7 +149,11 @@ class HubApi(private val client: HttpClient, settings: HubSettings) {
             val text = response.bodyAsText()
             val code = response.status.value
             if (response.status.isSuccess()) {
-                val env = hubJson.decodeFromString(ApiEnvelope.serializer(serializer), text)
+                val env = try {
+                    hubJson.decodeFromString(ApiEnvelope.serializer(serializer), text)
+                } catch (_: SerializationException) {
+                    return HubResult.Err(UNEXPECTED, code)
+                }
                 val data = env.data
                 if (env.success && data != null) {
                     HubResult.Ok(data)
