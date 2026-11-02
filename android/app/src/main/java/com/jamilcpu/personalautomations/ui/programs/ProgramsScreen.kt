@@ -95,7 +95,8 @@ fun ProgramsScreen(
                             if (state.refreshing) {
                                 CircularProgressIndicator(Modifier.padding(top = 48.dp))
                             } else {
-                                Text(state.emptyMessage() ?: "No programs")
+                                // Null while stale/errored: the banner carries the message.
+                                state.emptyMessage()?.let { Text(it) }
                             }
                         }
                     }
