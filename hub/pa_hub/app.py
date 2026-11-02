@@ -1,5 +1,6 @@
 """Hub HTTPS API (the contract the phone app and MCP server code against)."""
 
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from urllib.parse import quote
@@ -23,7 +24,17 @@ HTTP_CONFLICT = 409
 HTTP_BAD_GATEWAY = 502
 HTTP_UNAVAILABLE = 503
 
+AGENT_HEADER = "x-pa-agent"
+AGENT_RE = re.compile(r"[A-Za-z0-9._-]{1,40}")
+
 Closer = Callable[[], Awaitable[None]]
+
+
+def history_client(token_client: str, agent: str | None) -> str:
+    """`{token client}:{agent}` when the X-PA-Agent header is valid, else the token client."""
+    if agent and AGENT_RE.fullmatch(agent):
+        return f"{token_client}:{agent}"
+    return token_client
 
 
 class ActionRequest(BaseModel):
@@ -96,6 +107,9 @@ def create_app(
     client = bearer_auth(clients)
     router = APIRouter(prefix="/v1", dependencies=[Depends(client)])
 
+    def actor(request: Request, token_client: str = Depends(client)) -> str:
+        return history_client(token_client, request.headers.get(AGENT_HEADER))
+
     @router.get("/devices")
     async def devices() -> ApiResponse[list[DeviceSummary]]:
         return ok(await service.devices())
@@ -122,13 +136,13 @@ def create_app(
 
     @router.post("/actions")
     async def actions(
-        body: ActionRequest, name: str = Depends(client)
+        body: ActionRequest, name: str = Depends(actor)
     ) -> ApiResponse[ActionResult]:
         return ok(await service.act(name, body.device, body.id, body.action))
 
     @router.post("/devices/{device_id}/groups/{project}/restart")
     async def group_restart(
-        device_id: str, project: str, name: str = Depends(client)
+        device_id: str, project: str, name: str = Depends(actor)
     ) -> ApiResponse[ActionResult]:
         return ok(await service.group_restart(name, device_id, project))
 
@@ -138,12 +152,12 @@ def create_app(
 
     @router.put("/devices/{device_id}/usb")
     async def set_usb(
-        device_id: str, body: UsbRequest, name: str = Depends(client)
+        device_id: str, body: UsbRequest, name: str = Depends(actor)
     ) -> ApiResponse[ActionResult]:
         return ok(await service.set_usb(name, device_id, body.on))
 
     @router.post("/devices/{device_id}/reboot")
-    async def reboot(device_id: str, name: str = Depends(client)) -> ApiResponse[ActionResult]:
+    async def reboot(device_id: str, name: str = Depends(actor)) -> ApiResponse[ActionResult]:
         return ok(await service.reboot(name, device_id))
 
     @router.get("/history")

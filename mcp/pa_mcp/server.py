@@ -28,6 +28,7 @@ BEARER_PREFIX = "Bearer "
 WS_POLICY_VIOLATION = 1008
 TLS_CERT_ENV = "PA_MCP_TLS_CERT"
 TLS_KEY_ENV = "PA_MCP_TLS_KEY"
+AGENT_HEADER = "X-PA-Agent"
 
 DEVICES_TEXT = (
     'Devices: "jw-pc" (jw PC), "robot-pi" (Robot Pi), "pi1" (Pi1), "pi3" (Pi3). '
@@ -63,11 +64,13 @@ class HubClient:
         *,
         params: dict[str, Any] | None = None,
         body: dict[str, Any] | None = None,
+        agent: str | None = None,
     ) -> Any:
         timeout = READ_TIMEOUT_S if method == "GET" else ACTION_TIMEOUT_S
+        headers = {**self._headers, AGENT_HEADER: agent} if agent else self._headers
         try:
             async with httpx.AsyncClient(
-                base_url=self._url, headers=self._headers, verify=self._verify, timeout=timeout
+                base_url=self._url, headers=headers, verify=self._verify, timeout=timeout
             ) as client:
                 response = await client.request(method, f"/v1{path}", params=params, json=body)
         except httpx.TimeoutException as exc:
@@ -99,11 +102,24 @@ def _query(params: dict[str, Any]) -> dict[str, str]:
     return {k: str(v).lower() if isinstance(v, bool) else str(v) for k, v in params.items()}
 
 
+def _agent_name(mcp: FastMCP) -> str | None:
+    """The connected MCP client's clientInfo.name (the hub validates it), if known."""
+    try:
+        params = mcp.get_context().session.client_params
+    except (LookupError, ValueError, AttributeError):
+        return None
+    name = params.clientInfo.name if params is not None else None
+    return name or None
+
+
 def build_server(
     hub: HubClient, host: str = DEFAULT_HTTP_HOST, port: int = DEFAULT_HTTP_PORT
 ) -> FastMCP:
     """Create the FastMCP server with every lab tool bound to `hub`."""
     mcp = FastMCP("personal-automations", instructions=INSTRUCTIONS, host=host, port=port)
+
+    async def call(method: str, path: str, **kwargs: Any) -> Any:
+        return await hub.call(method, path, agent=_agent_name(mcp), **kwargs)
 
     @mcp.tool(
         description=(
@@ -112,13 +128,13 @@ def build_server(
         )
     )
     async def list_devices() -> Any:
-        return await hub.call("GET", "/devices")
+        return await call("GET", "/devices")
 
     @mcp.tool(
         description=f"Show one device's summary (online, health, programs). {DEVICES_TEXT}"
     )
     async def get_device(device: str) -> Any:
-        return await hub.call("GET", f"/devices/{_seg(device)}")
+        return await call("GET", f"/devices/{_seg(device)}")
 
     @mcp.tool(
         description=(
@@ -131,7 +147,7 @@ def build_server(
         params: dict[str, Any] = {"include_system": include_system}
         if device:
             params["device"] = device
-        return await hub.call("GET", "/programs", params=_query(params))
+        return await call("GET", "/programs", params=_query(params))
 
     @mcp.tool(
         description=(
@@ -139,7 +155,7 @@ def build_server(
         )
     )
     async def get_program(device: str, program_id: str) -> Any:
-        return await hub.call("GET", "/program", params={"device": device, "id": program_id})
+        return await call("GET", "/program", params={"device": device, "id": program_id})
 
     @mcp.tool(
         description=(
@@ -149,7 +165,7 @@ def build_server(
     async def get_program_logs(
         device: str, program_id: str, lines: Annotated[int, Field(ge=1, le=2000)] = 100
     ) -> Any:
-        return await hub.call(
+        return await call(
             "GET", "/logs", params={"device": device, "id": program_id, "lines": lines}
         )
 
@@ -160,7 +176,7 @@ def build_server(
         )
     )
     async def program_action(device: str, program_id: str, action: ProgramAction) -> Any:
-        return await hub.call(
+        return await call(
             "POST", "/actions", body={"device": device, "id": program_id, "action": action}
         )
 
@@ -171,7 +187,7 @@ def build_server(
         )
     )
     async def restart_group(device: str, project: str) -> Any:
-        return await hub.call("POST", f"/devices/{_seg(device)}/groups/{_seg(project)}/restart")
+        return await call("POST", f"/devices/{_seg(device)}/groups/{_seg(project)}/restart")
 
     @mcp.tool(
         description=(
@@ -180,7 +196,7 @@ def build_server(
         )
     )
     async def get_usb_power(device: str) -> Any:
-        return await hub.call("GET", f"/devices/{_seg(device)}/usb")
+        return await call("GET", f"/devices/{_seg(device)}/usb")
 
     @mcp.tool(
         description=(
@@ -189,7 +205,7 @@ def build_server(
         )
     )
     async def set_usb_power(device: str, on: bool) -> Any:
-        return await hub.call("PUT", f"/devices/{_seg(device)}/usb", body={"on": on})
+        return await call("PUT", f"/devices/{_seg(device)}/usb", body={"on": on})
 
     @mcp.tool(
         description=(
@@ -198,13 +214,13 @@ def build_server(
         )
     )
     async def reboot_device(device: str) -> Any:
-        return await hub.call("POST", f"/devices/{_seg(device)}/reboot")
+        return await call("POST", f"/devices/{_seg(device)}/reboot")
 
     @mcp.tool(
         description="Show the most recent actions taken through the hub (client, device, result)."
     )
     async def recent_history(limit: Annotated[int, Field(ge=1, le=500)] = 20) -> Any:
-        return await hub.call("GET", "/history", params={"limit": limit})
+        return await call("GET", "/history", params={"limit": limit})
 
     return mcp
 

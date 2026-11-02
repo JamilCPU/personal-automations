@@ -11,7 +11,7 @@ uv sync
 uv run pa-hub init --ip 192.0.2.99        # writes hub.toml, hub.secrets.toml, hub\cert.pem, hub\key.pem
 ```
 
-Files land in `%LOCALAPPDATA%\personal-automations`. `init` refuses to overwrite existing files and creates two client tokens: `phone` and `mcp`.
+Files land in `%LOCALAPPDATA%\personal-automations`. `init` refuses to overwrite existing files and creates three client tokens: `phone`, `mcp-stdio` (Claude Code over stdio) and `mcp-http` (the MCP HTTP server task). Separate tokens let the history show which path an action came from; the MCP server also adds the agent's name (for example `mcp-http:claude-code`).
 
 Register each agent once it is deployed (section 2). The deploy script saves `cert.pem` and `token` under `%LOCALAPPDATA%\personal-automations\agents\<device-id>\`:
 
@@ -77,17 +77,17 @@ Updates must be signed with the same keystore, otherwise `adb install -r` fails 
 ```powershell
 claude mcp add personal-automations -s user `
   -e PA_HUB_URL=https://192.0.2.99:7700 `
-  -e PA_HUB_TOKEN=<mcp client token> `
+  -e PA_HUB_TOKEN=<mcp-stdio client token> `
   -e PA_HUB_CERT=$env:LOCALAPPDATA\personal-automations\hub\cert.pem `
   -- uv run --project F:\Dev\personal-automations pa-mcp
 ```
 
-The `mcp` token is the key whose value is `"mcp"` in `hub.secrets.toml` (format `"<token>" = "<client>"`).
+The `mcp-stdio` token is the key whose value is `"mcp-stdio"` in `hub.secrets.toml` (format `"<token>" = "<client>"`).
 
 ## 6. Rotate a client token
 
-1. Edit `%LOCALAPPDATA%\personal-automations\hub.secrets.toml` and replace the token for `phone` and/or `mcp` with a new value (`python -c "import secrets; print(secrets.token_urlsafe(32))"`).
-2. Restart the hub (restart the "Personal Automations Hub" scheduled task, or `pa-hub serve`). Restart the "Personal Automations MCP" task too, since it reads the `mcp` token at launch.
+1. Edit `%LOCALAPPDATA%\personal-automations\hub.secrets.toml` and replace the token for `phone`, `mcp-stdio` and/or `mcp-http` with a new value (`python -c "import secrets; print(secrets.token_urlsafe(32))"`).
+2. Restart the hub (restart the "Personal Automations Hub" scheduled task, or `pa-hub serve`). Restart the "Personal Automations MCP" task too, since it reads the `mcp-http` token at launch.
 3. Phone: run `pa-hub pair --client phone` again and scan the QR code.
 4. Claude Code: `claude mcp remove personal-automations -s user`, then add it again with the new token (section 5).
 
