@@ -184,3 +184,11 @@ def test_bad_output_returns_empty():
     assert list_k3s(FakeRunner(RunResult(1, "", "boom")), KUBECONFIG, NODES) == []
     assert list_k3s(FakeRunner(RunResult(0, "not json", "")), KUBECONFIG, NODES) == []
     assert list_k3s(FakeRunner(RunResult(0, "[]", "")), KUBECONFIG, NODES) == []
+
+
+def test_pin_key_is_stable_owner_id():
+    _, programs = _fixture_programs()
+    gitea = next(p for p in programs if p.id == "k3s:lab/gitea@raspberrypi-1")
+    assert gitea.detail["pod"] != "gitea"  # the pod name carries a hash; the key does not
+    assert gitea.pin_key == "k3s:lab/gitea@raspberrypi-1"
+    assert all(p.pin_key == p.id for p in programs)
