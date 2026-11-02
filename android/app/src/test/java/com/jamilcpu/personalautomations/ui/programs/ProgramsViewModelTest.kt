@@ -213,4 +213,20 @@ class ProgramsViewModelTest {
         assertEquals("No programs on Pi3", vm.state.value.emptyMessage())
         vm.stop()
     }
+
+    @Test
+    fun empty_message_hidden_when_stale_or_errored() = runTest(dispatcher) {
+        val hub = FakePrograms(all)
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        vm.setFilter("pi3")
+        runCurrent()
+        assertTrue(vm.state.value.emptyMessage() != null)
+        hub.failure = HubResult.Err("Can't reach the hub", 0)
+        advanceTimeBy(5_001)
+        assertTrue(vm.state.value.stale)
+        assertNull(vm.state.value.emptyMessage())
+        vm.stop()
+    }
 }

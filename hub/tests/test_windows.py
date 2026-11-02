@@ -448,3 +448,14 @@ async def test_health_cached_briefly():
     clock.t = 2.5
     await dev.health()
     assert calls["n"] == 2
+
+
+async def test_programs_reenumerates_after_act():
+    clock = Clock()
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    dev, counts = cached_device([proc], clock)
+    (prog,) = await dev.programs()
+    await dev.act(prog.id, "stop")
+    before = counts["iter"]
+    await dev.programs()
+    assert counts["iter"] == before + 1
