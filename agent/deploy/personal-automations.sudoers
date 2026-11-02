@@ -1,0 +1,3 @@
+# Installed to /etc/sudoers.d/personal-automations by deploy-agent.sh (validated with visudo -cf).
+# The agent's own policy refuses locked units; sudo is the second fence.
+pa-agent ALL=(root) NOPASSWD: /usr/bin/systemctl start *, /usr/bin/systemctl stop *, /usr/bin/systemctl restart *, /usr/bin/systemctl reboot, /usr/local/bin/lidar-power on, /usr/local/bin/lidar-power off, /usr/local/bin/lidar-power status

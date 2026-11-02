@@ -1,0 +1,1 @@
+"""Personal Automations MCP server."""
