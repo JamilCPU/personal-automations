@@ -16,6 +16,7 @@ from pa_hub.app import Closer, create_app, pair_uri
 from pa_hub.clients import DeviceClient, RemoteAgentClient, UnavailableDevice
 from pa_hub.config import HubConfig, default_home, load_hub_config
 from pa_hub.history import HistoryStore
+from pa_hub.pins import PinStore
 from pa_hub.service import HubService
 from pa_hub.windows import LocalWindowsDevice
 
@@ -57,6 +58,7 @@ def build_service(cfg: HubConfig) -> tuple[HubService, list[Closer]]:
         HistoryStore(cfg.db_path),
         cfg.timeout_s,
         action_timeout_s=cfg.action_timeout_s,
+        pins=PinStore(cfg.db_path),
     )
     return service, closers
 
@@ -90,9 +92,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     cert_path.write_bytes(cert_pem)
     key_path.write_bytes(key_pem)
     tokens = {name: secrets.token_urlsafe(32) for name in INIT_CLIENTS}
-    (out / SECRETS_NAME).write_text(
-        render_secrets_toml(tokens), encoding="utf-8"
-    )
+    (out / SECRETS_NAME).write_text(render_secrets_toml(tokens), encoding="utf-8")
     (out / CONFIG_NAME).write_text(render_hub_toml(out, args.ip), encoding="utf-8")
     print(f"config:      {out / CONFIG_NAME}")
     print(f"secrets:     {out / SECRETS_NAME}  (clients: {', '.join(INIT_CLIENTS)})")

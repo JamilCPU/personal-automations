@@ -13,8 +13,12 @@ from pydantic import BaseModel
 from pa_hub.clients import DeviceClient, DeviceOffline, HubAgentError
 from pa_hub.config import DeviceEntry
 from pa_hub.history import HistoryEntry, HistoryStore
+from pa_hub.pins import Pin, PinStore
 
 K3S_PREFIX = "k3s:"
+PINNED_PREFIX = "pinned:"
+PROCESS_PREFIX = "process:"
+NOT_RUNNING = "Not running"
 DETAIL_HISTORY_LIMIT = 10
 DEFAULT_ACTION_TIMEOUT_S = 30.0
 T = TypeVar("T")
@@ -58,10 +62,13 @@ class HubService:
         history: HistoryStore,
         timeout_s: float,
         action_timeout_s: float = DEFAULT_ACTION_TIMEOUT_S,
+        *,
+        pins: PinStore,
     ) -> None:
         self._clients = devices
         self._entries = entries
         self._history = history
+        self._pins = pins
         self._timeout_s = timeout_s
         self._action_timeout_s = action_timeout_s
         self._order = {device_id: index for index, device_id in enumerate(entries)}
@@ -125,9 +132,9 @@ class HubService:
             return _Snapshot()
         return _Snapshot(health=health, programs=programs, usb=usb)
 
-    async def _listing(self, device_id: str) -> list[Program]:
-        programs = await self._listing_call(device_id, self._clients[device_id].programs())
-        return programs or []
+    async def _listing(self, device_id: str) -> list[Program] | None:
+        """The device's programs, or None when it is offline."""
+        return await self._listing_call(device_id, self._clients[device_id].programs())
 
     def _program_sources(self, device: str | None) -> list[str]:
         """Clients that can return programs for `device` (k3s pods come from the k3s source)."""
@@ -149,8 +156,30 @@ class HubService:
         fallback = len(self._order)
         return sorted(
             programs,
-            key=lambda p: (self._order.get(p.device, fallback), p.name.lower()),
+            key=lambda p: (not p.pinned, self._order.get(p.device, fallback), p.name.lower()),
         )
+
+    def _apply_pins(
+        self, programs: list[Program], pins: list[Pin], online: set[str], include_system: bool
+    ) -> list[Program]:
+        """Mark pinned programs, keep them even when system, add placeholders for absent pins.
+
+        A placeholder needs its device online (offline devices show nothing); a k3s pin also
+        needs the k3s source online, since that is where its pod would come from.
+        """
+        pinned = {(pin.device, pin.pin_key) for pin in pins}
+        marked = [_with_pin(p, pinned) for p in programs]
+        visible = [p for p in marked if include_system or not p.system or p.pinned]
+        live = {(p.device, p.pin_key) for p in marked}
+        k3s_online = self._k3s_source in online
+        placeholders = [
+            _placeholder(pin)
+            for pin in pins
+            if (pin.device, pin.pin_key) not in live
+            and pin.device in online
+            and (not pin.pin_key.startswith(K3S_PREFIX) or k3s_online)
+        ]
+        return visible + placeholders
 
     async def _record(
         self,
@@ -186,20 +215,18 @@ class HubService:
 
     # ---- reads ---------------------------------------------------------
 
-    def _summary(self, device_id: str, snaps: dict[str, _Snapshot]) -> DeviceSummary:
+    def _summary(
+        self, device_id: str, snaps: dict[str, _Snapshot], visible: list[Program]
+    ) -> DeviceSummary:
+        """`visible`: every device's programs as the default (non-system) list shows them."""
         entry = self._entries[device_id]
         snap = snaps[device_id]
         online = snap.health is not None
         running = total = 0
         if online:
-            visible = [
-                p
-                for s in snaps.values()
-                for p in s.programs
-                if p.device == device_id and not p.system
-            ]
-            total = len(visible)
-            running = sum(1 for p in visible if p.status == "running")
+            mine = [p for p in visible if p.device == device_id]
+            total = len(mine)
+            running = sum(1 for p in mine if p.status == "running")
         return DeviceSummary(
             id=device_id,
             name=entry.name,
@@ -214,8 +241,11 @@ class HubService:
         )
 
     async def devices(self) -> list[DeviceSummary]:
-        snaps = await self._snapshots()
-        return [self._summary(i, snaps) for i in snaps]
+        snaps, pins = await asyncio.gather(self._snapshots(), asyncio.to_thread(self._pins.all))
+        online = {i for i, snap in snaps.items() if snap.health is not None}
+        programs = [p for snap in snaps.values() for p in snap.programs]
+        visible = self._apply_pins(programs, pins, online, include_system=False)
+        return [self._summary(i, snaps, visible) for i in snaps]
 
     async def device(self, device_id: str) -> DeviceSummary:
         self._client(device_id)
@@ -224,13 +254,17 @@ class HubService:
     async def programs(self, device: str | None, include_system: bool) -> list[Program]:
         if device is not None:
             self._client(device)
-        lists = await asyncio.gather(*(self._listing(i) for i in self._program_sources(device)))
-        merged = [p for programs in lists for p in programs]
+        sources = self._program_sources(device)
+        lists, pins = await asyncio.gather(
+            asyncio.gather(*(self._listing(i) for i in sources)),
+            asyncio.to_thread(self._pins.all),
+        )
+        online = {i for i, programs in zip(sources, lists, strict=True) if programs is not None}
+        merged = [p for programs in lists if programs for p in programs]
         if device is not None:
             merged = [p for p in merged if p.device == device]
-        if not include_system:
-            merged = [p for p in merged if not p.system]
-        return self._sorted(merged)
+            pins = [pin for pin in pins if pin.device == device]
+        return self._sorted(self._apply_pins(merged, pins, online, include_system))
 
     async def program(self, device_id: str, pid: str) -> ProgramDetail:
         client = self._route(device_id, pid)
@@ -274,9 +308,94 @@ class HubService:
 
         return await self._record(client, device_id, "usb", "on" if on else "off", call)
 
+    async def set_pinned(self, client: str, device_id: str, pid: str, pinned: bool) -> ActionResult:
+        async def call() -> ActionResult:
+            if not pinned:
+                return await self._unpin(device_id, pid)
+            pin = await self._resolve_pin(device_id, pid)
+            await asyncio.to_thread(self._pins.add, pin)
+            return ActionResult(ok=True, message=f"pinned {pin.name}")
+
+        return await self._record(client, device_id, pid, "pin" if pinned else "unpin", call)
+
+    async def _unpin(self, device_id: str, pid: str) -> ActionResult:
+        """Idempotent and device-free when the key can be derived from the id.
+
+        Only when that removes nothing is the device asked for the program's real pin key
+        (interpreter processes); if it cannot answer, or nothing is pinned, that is still ok.
+        """
+        self._client(device_id)
+        stored = await asyncio.to_thread(self._pins.get, device_id, _candidate_key(pid))
+        if stored is None and not pid.startswith(PINNED_PREFIX):
+            try:
+                stored = await self._resolve_pin(device_id, pid)
+            except (KeyError, DeviceOffline, HubAgentError):
+                stored = None
+        if stored is None:
+            return ActionResult(ok=True, message=f"{pid} was not pinned")
+        removed = await asyncio.to_thread(self._pins.remove, device_id, stored.pin_key)
+        if not removed:
+            return ActionResult(ok=True, message=f"{stored.name} was not pinned")
+        return ActionResult(ok=True, message=f"unpinned {stored.name}")
+
+    async def _resolve_pin(self, device_id: str, pid: str) -> Pin:
+        """The pin for `pid`: a placeholder's stored pin, else one built from the live program."""
+        self._client(device_id)
+        if pid.startswith(PINNED_PREFIX):
+            stored = await asyncio.to_thread(
+                self._pins.get, device_id, pid.removeprefix(PINNED_PREFIX)
+            )
+            if stored is None:
+                raise KeyError(f"unknown program: {pid}")
+            return stored
+        client = self._route(device_id, pid)
+        program = await self._call(device_id, client.program(pid))
+        return Pin(
+            device=device_id,
+            pin_key=program.pin_key or program.id,
+            name=program.name,
+            kind=program.kind,
+        )
+
     async def reboot(self, client: str, device_id: str) -> ActionResult:
         async def call() -> ActionResult:
             target = self._require(device_id, "reboot")
             return await self._call(device_id, target.reboot(), mutating=True)
 
         return await self._record(client, device_id, "reboot", "reboot", call)
+
+
+def _candidate_key(pid: str) -> str:
+    """The pin key an id most likely has, without asking the device.
+
+    `pinned:<key>` -> key; `process:<name>#pid@stamp` -> `process:<name>`; anything else is
+    its own key. Interpreter processes carry a longer key, found via the device instead.
+    """
+    if pid.startswith(PINNED_PREFIX):
+        return pid.removeprefix(PINNED_PREFIX)
+    if pid.startswith(PROCESS_PREFIX) and "#" in pid:
+        return pid.rsplit("#", 1)[0]
+    return pid
+
+
+def _with_pin(program: Program, pinned: set[tuple[str, str]]) -> Program:
+    """Fill in the pin key (older agents send none: use the id) and the pinned flag."""
+    key = program.pin_key or program.id
+    return program.model_copy(update={"pin_key": key, "pinned": (program.device, key) in pinned})
+
+
+def _placeholder(pin: Pin) -> Program:
+    """A pinned program that is not running: still listed, so it can be found and unpinned."""
+    return Program(
+        id=f"{PINNED_PREFIX}{pin.pin_key}",
+        name=pin.name,
+        kind=pin.kind,
+        device=pin.device,
+        status="stopped",
+        description=NOT_RUNNING,
+        system=False,
+        protection="none",
+        actions=[],
+        pin_key=pin.pin_key,
+        pinned=True,
+    )

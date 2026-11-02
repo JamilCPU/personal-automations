@@ -18,6 +18,7 @@ from pa_core.policy import (
     allowed_actions,
     check_action,
     is_system,
+    is_system_exe,
     protection_for,
 )
 from pa_core.runner import Runner, run
@@ -35,6 +36,8 @@ PROC_ATTRS = ["pid", "ppid", "name", "exe", "cmdline", "create_time"]
 UNSUPPORTED = "not supported on jw PC"
 SERVICE_PREFIX = "windows-service:"
 PROCESS_PREFIX = "process:"
+# Interpreter pin keys: process:<name>|<script path or argv>; apps keep process:<ExeStem>.
+PIN_SEPARATOR = "|"
 DOCKER_PREFIX = "docker:"
 GPU_FIELDS = ("temp_c", "util_pct", "mem_used_mb", "mem_total_mb")
 GPU_ARGV = [
@@ -98,19 +101,32 @@ def enum_windowed_pids() -> dict[int, str]:
     return found
 
 
-def _under_windows_dir(exe_path: object) -> bool:
-    """True when the executable lives under the Windows directory (case-insensitive)."""
-    if not isinstance(exe_path, str) or not exe_path:
-        return False
-    return exe_path.replace("/", "\\").lower().startswith(SYSTEM_ROOT.lower() + "\\")
+def _text(value: object) -> str | None:
+    return value if isinstance(value, str) and value else None
+
+
+def _exe_stem(exe: str) -> str:
+    """`discord.exe` -> `Discord`: a stable display name (window titles change constantly)."""
+    stem = ntpath.splitext(exe)[0]
+    return stem[:1].upper() + stem[1:]
+
+
+def _script_arg(cmdline: list[str]) -> str:
+    """The script (or `-jar` target) an interpreter runs, as given; "" when there is none."""
+    args = cmdline[1:]
+    if "-jar" in args and args.index("-jar") + 1 < len(args):
+        return args[args.index("-jar") + 1]
+    return next((a for a in args if not a.startswith("-")), "")
+
+
+def _interpreter_pin_suffix(cmdline: list[str]) -> str:
+    """Tells apart same-named scripts (two projects' app.py): the script's path, else argv."""
+    text = _script_arg(cmdline) or " ".join(cmdline)
+    return text.replace("/", "\\").lower()
 
 
 def _script_name(cmdline: list[str]) -> str | None:
-    args = cmdline[1:]
-    if "-jar" in args and args.index("-jar") + 1 < len(args):
-        script = args[args.index("-jar") + 1]
-    else:
-        script = next((a for a in args if not a.startswith("-")), "")
+    script = _script_arg(cmdline)
     if not script:
         return None
     base = ntpath.basename(script.replace("/", "\\"))
@@ -165,8 +181,10 @@ def _descendants(pids: set[int], snap: dict[int, dict[str, Any]]) -> set[int]:
         children = {
             pid
             for pid, info in snap.items()
-            if pid not in found and pid not in pids
-            and (parent := _parent(info, snap)) is not None and parent["pid"] in frontier
+            if pid not in found
+            and pid not in pids
+            and (parent := _parent(info, snap)) is not None
+            and parent["pid"] in frontier
         }
         found |= children
         frontier = children
@@ -234,16 +252,21 @@ class LocalWindowsDevice:
             binpath = None
         status = _STATUS.get(str(svc.status()).lower(), "unknown")
         protection = protection_for("windows-service", name)
+        display = svc.display_name() or ""
+        system = is_system(
+            "windows-service", name, binary_path=binpath, status=status, display_name=display
+        )
         return Program(
             id=f"{SERVICE_PREFIX}{name}",
-            name=svc.display_name() or name,
+            name=display or name,
             kind="windows-service",
             device=self.device_id,
             status=status,
-            system=is_system("windows-service", name, binary_path=binpath),
+            system=system,
             protection=protection,
             actions=allowed_actions("windows-service", status, protection),
             detail={"service": name, "binary": binpath or ""},
+            pin_key=f"{SERVICE_PREFIX}{name}",
         )
 
     def _snapshot(self) -> dict[int, dict[str, Any]]:
@@ -296,10 +319,20 @@ class LocalWindowsDevice:
         interpreter = _is_interpreter(exe)
         if not (pid in windowed or (interpreter and age >= MIN_AGE_S)):
             return None
-        script = _script_name(info.get("cmdline") or []) if interpreter else None
-        name = script or windowed.get(pid) or exe or str(pid)
+        cmdline = list(info.get("cmdline") or [])
+        script = _script_name(cmdline) if interpreter else None
+        window = windowed.get(pid, "")
+        name = script or _exe_stem(exe) or str(pid)
+        pin_key = f"{PROCESS_PREFIX}{name}"
+        if interpreter:
+            pin_key += f"{PIN_SEPARATOR}{_interpreter_pin_suffix(cmdline)}"
         protection = "locked" if locked else protection_for("process", name)
+        # The hub's own tree is plumbing; an interpreter's location says nothing about its script.
+        system = locked or (not interpreter and is_system_exe(_text(info.get("exe"))))
         stamp = str(int(created))
+        detail = {"pid": str(pid), "exe": exe, "create_time": stamp}
+        if window:
+            detail["window"] = window
         return Program(
             id=f"{PROCESS_PREFIX}{name}#{pid}@{stamp}",
             name=name,
@@ -307,11 +340,12 @@ class LocalWindowsDevice:
             device=self.device_id,
             status="running",
             uptime_s=age,
-            description=exe,
-            system=_under_windows_dir(info.get("exe")),
+            description=window or exe,
+            system=system,
             protection=protection,
             actions=allowed_actions("process", "running", protection),
-            detail={"pid": str(pid), "exe": exe, "create_time": stamp},
+            detail=detail,
+            pin_key=pin_key,
         )
 
     def _docker_programs(self) -> list[Program]:

@@ -63,8 +63,9 @@ def _to_program(row: dict, device: str) -> Program | None:
     status = _STATE_TO_STATUS.get(str(row.get("State", "")).lower(), "unknown")
     protection = protection_for("docker", container)
     uptime = parse_running_for(str(row.get("RunningFor", ""))) if status == "running" else None
+    program_id = f"docker:{container}"
     return Program(
-        id=f"docker:{container}",
+        id=program_id,
         name=labels.get(_SERVICE_LABEL) or container,
         kind="docker",
         device=device,
@@ -76,6 +77,7 @@ def _to_program(row: dict, device: str) -> Program | None:
         actions=allowed_actions("docker", status, protection),
         group=labels.get(_PROJECT_LABEL),
         detail={"container": container, "status_text": str(row.get("Status", ""))},
+        pin_key=program_id,
     )
 
 

@@ -27,8 +27,15 @@ def cert_file(tmp_path: Path) -> str:
 @pytest.fixture
 def entry(cert_file: str) -> DeviceEntry:
     return DeviceEntry(
-        id="pi-test", name="Pi", role="Network", ip="10.0.0.5", kind="agent",
-        url=BASE, cert_file=cert_file, token="tok123", capabilities=["usb", "reboot"],
+        id="pi-test",
+        name="Pi",
+        role="Network",
+        ip="10.0.0.5",
+        kind="agent",
+        url=BASE,
+        cert_file=cert_file,
+        token="tok123",
+        capabilities=["usb", "reboot"],
     )
 
 
@@ -42,8 +49,14 @@ def envelope(data=None, error=None):
 
 
 PROGRAM = {
-    "id": "docker:web", "name": "web", "kind": "docker", "device": "pi-test",
-    "status": "running", "system": False, "protection": "none", "actions": ["stop", "restart"],
+    "id": "docker:web",
+    "name": "web",
+    "kind": "docker",
+    "device": "pi-test",
+    "status": "running",
+    "system": False,
+    "protection": "none",
+    "actions": ["stop", "restart"],
 }
 
 
@@ -182,7 +195,10 @@ def test_config_merges_secrets(tmp_path, monkeypatch):
     assert cfg.clients == {"phone-token": "phone", "mcp-token": "mcp"}
     by_id = {d.id: d for d in cfg.devices}
     assert {d.id: d.name for d in cfg.devices} == {
-        "jw-pc": "jw PC", "robot-pi": "Robot Pi", "pi1": "Pi1", "pi3": "Pi3",
+        "jw-pc": "jw PC",
+        "robot-pi": "Robot Pi",
+        "pi1": "Pi1",
+        "pi3": "Pi3",
     }
     assert "pi1-token" not in repr(by_id["pi1"])
     assert by_id["pi1"].token == "pi1-token"
