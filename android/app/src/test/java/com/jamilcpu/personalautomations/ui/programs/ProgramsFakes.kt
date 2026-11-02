@@ -15,6 +15,9 @@ internal class FakePrograms(var all: List<Program> = emptyList()) : HubClient {
     var failure: HubResult.Err? = null
     val queries = mutableListOf<Pair<String?, Boolean>>()
 
+    /** Simulated hub latency per device filter (key null = unfiltered). */
+    val delays = mutableMapOf<String?, Long>()
+
     var detail: HubResult<ProgramDetail> = HubResult.Err("unset", 0)
     var logs: HubResult<List<String>> = HubResult.Ok(emptyList())
     var actResult: HubResult<ActionResult> = HubResult.Ok(ActionResult(true))
@@ -25,6 +28,7 @@ internal class FakePrograms(var all: List<Program> = emptyList()) : HubClient {
 
     override suspend fun programs(device: String?, includeSystem: Boolean): HubResult<List<Program>> {
         queries += device to includeSystem
+        delays[device]?.let { kotlinx.coroutines.delay(it) }
         failure?.let { return it }
         return HubResult.Ok(all.filter { (device == null || it.device == device) && (includeSystem || !it.system) })
     }
