@@ -108,6 +108,7 @@ dependencies {
     // HTTP client (Personal Automations hub API)
     implementation("io.ktor:ktor-client-core:3.1.1")
     implementation("io.ktor:ktor-client-okhttp:3.1.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("io.ktor:ktor-client-content-negotiation:3.1.1")
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.1.1")
 
