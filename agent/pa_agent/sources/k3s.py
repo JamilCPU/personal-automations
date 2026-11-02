@@ -102,7 +102,7 @@ def _to_program(pod: object, node_devices: dict[str, str], now: datetime) -> Pro
         uptime_s=_uptime(status.get("startTime"), now) if state == "running" else None,
         system=is_system("k3s", owner, namespace=namespace),
         protection=protection,
-        actions=allowed_actions("k3s", state, protection),
+        actions=allowed_actions("k3s", state, protection, namespace=namespace),
         group=namespace,
         detail={
             "pod": pod_name,

@@ -147,3 +147,31 @@ def test_is_system_structural_template_rule():
     assert not is_system("systemd", "foo@bar.service")
     assert not is_system("systemd", "code-server@jamil.service", active_state="inactive")
     assert not is_system("systemd", "plain.service", active_state="inactive")
+
+
+@pytest.mark.parametrize(
+    "unit",
+    [
+        "wpa_supplicant.service",
+        "dbus.service",
+        "dbus-broker.service",
+        "networking.service",
+        "dhcpcd.service",
+        "systemd-resolved.service",
+    ],
+)
+def test_network_critical_units_locked(unit):
+    assert protection_for("systemd", unit) == "locked"
+    assert allowed_actions("systemd", "running", protection_for("systemd", unit)) == []
+
+
+@pytest.mark.parametrize(
+    "service", ["WlanSvc", "NlaSvc", "netprofm", "Dhcp", "Dnscache", "mpssvc", "sshd", "dnscache"]
+)
+def test_network_critical_windows_services_locked(service):
+    assert protection_for("windows-service", service) == "locked"
+
+
+def test_kube_system_pods_have_no_actions():
+    assert allowed_actions("k3s", "running", "none", namespace="kube-system") == []
+    assert allowed_actions("k3s", "running", "none", namespace="default") == ["restart"]
