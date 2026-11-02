@@ -36,6 +36,7 @@ import com.jamilcpu.personalautomations.data.Program
 import com.jamilcpu.personalautomations.ui.common.ConfirmDialog
 import com.jamilcpu.personalautomations.ui.common.HubBanner
 import com.jamilcpu.personalautomations.ui.common.LoadState
+import com.jamilcpu.personalautomations.ui.common.PinButton
 import com.jamilcpu.personalautomations.ui.common.StatusDot
 import com.jamilcpu.personalautomations.ui.common.deviceLabel
 import com.jamilcpu.personalautomations.ui.common.formatUptime
@@ -65,6 +66,7 @@ fun ProgramDetailScreen(
     onRefresh: () -> Unit,
     onRefreshLogs: () -> Unit,
     modifier: Modifier = Modifier,
+    onTogglePin: () -> Unit = {},
 ) {
     val program = state.program
     if (program == null) {
@@ -74,7 +76,10 @@ fun ProgramDetailScreen(
         }
         return
     }
-    DetailContent(state, program, visibleActions, locked, needsSecondConfirm, onAct, onRefresh, onRefreshLogs, modifier)
+    DetailContent(
+        state, program, visibleActions, locked, needsSecondConfirm, onAct, onRefresh, onRefreshLogs, onTogglePin,
+        modifier,
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -88,6 +93,7 @@ private fun DetailContent(
     onAct: (String) -> Unit,
     onRefresh: () -> Unit,
     onRefreshLogs: () -> Unit,
+    onTogglePin: () -> Unit,
     modifier: Modifier,
 ) {
     var pending by remember { mutableStateOf<PendingAction?>(null) }
@@ -100,8 +106,12 @@ private fun DetailContent(
                 Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
-                Header(program)
+                Header(program, pinEnabled = !state.busy && !state.stale && !state.gone, onTogglePin)
                 state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (state.placeholder) {
+                    Text(NOT_RUNNING, style = MaterialTheme.typography.bodyMedium)
+                    return@Column
+                }
                 InfoRows(program)
                 if (locked) {
                     Text(LOCKED_CAPTION, style = MaterialTheme.typography.bodyMedium)
@@ -147,12 +157,13 @@ private fun DetailContent(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Header(program: Program) {
+private fun Header(program: Program, pinEnabled: Boolean, onTogglePin: () -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         StatusDot(program.status == "running")
         Spacer(Modifier.width(12.dp))
         Text(program.name, style = MaterialTheme.typography.headlineSmall, modifier = Modifier.weight(1f))
         AssistChip(onClick = {}, label = { Text(deviceLabel(program.device)) })
+        PinButton(pinned = program.pinned, enabled = pinEnabled, onToggle = onTogglePin)
     }
 }
 

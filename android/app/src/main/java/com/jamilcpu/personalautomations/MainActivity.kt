@@ -232,6 +232,7 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
                         onFilter = programsVm::setFilter,
                         onHideSystem = programsVm::setHideSystem,
                         onRefresh = programsVm::refresh,
+                        onTogglePin = programsVm::togglePin,
                         onOpenProgram = { device, id ->
                             navController.navigate("program/${Uri.encode(device)}/${Uri.encode(id)}")
                         },
@@ -249,7 +250,7 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
                 val device = entry.arguments?.getString("device")
                 val id = entry.arguments?.getString("id")
                 if (api != null && device != null && id != null) {
-                    ProgramDetailRoute(api, device, id)
+                    ProgramDetailRoute(api, device, id, onClose = { navController.popBackStack() })
                 }
             }
         }
@@ -257,13 +258,14 @@ fun AppShell(settings: HubSettings? = null, loaded: Boolean = true) {
 }
 
 @Composable
-private fun ProgramDetailRoute(api: HubApi, device: String, id: String) {
+private fun ProgramDetailRoute(api: HubApi, device: String, id: String, onClose: () -> Unit) {
     val vm: ProgramDetailViewModel = viewModel(
         key = "program-$device-$id",
         factory = ProgramDetailViewModelFactory(api, device, id),
     )
     val state by vm.state.collectAsState()
     LaunchedEffect(vm) { vm.load() }
+    LaunchedEffect(state.closed) { if (state.closed) onClose() }
     ProgramDetailScreen(
         state = state,
         visibleActions = vm.visibleActions(),
@@ -272,6 +274,7 @@ private fun ProgramDetailRoute(api: HubApi, device: String, id: String) {
         onAct = vm::act,
         onRefresh = vm::load,
         onRefreshLogs = vm::refreshLogs,
+        onTogglePin = vm::togglePin,
     )
 }
 

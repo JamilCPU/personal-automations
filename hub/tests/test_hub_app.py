@@ -36,6 +36,7 @@ ROUTES = [
     ("PUT", "/v1/devices/robot-pi/usb", {"on": True}),
     ("POST", "/v1/devices/pi3/reboot", None),
     ("GET", "/v1/history", None),
+    ("PUT", "/v1/pins", {"device": "jw-pc", "id": "d:a", "pinned": True}),
 ]
 
 
@@ -61,9 +62,10 @@ def test_happy_paths(tmp_path: Path) -> None:
     logs = client.get("/v1/logs?device=pi1&id=s:x&lines=5", headers=auth()).json()
     assert logs["data"] == ["line"]
     assert client.get("/v1/devices/robot-pi/usb", headers=auth()).json()["data"]["on"] is True
-    assert client.put("/v1/devices/robot-pi/usb", json={"on": False}, headers=auth()).json()[
-        "data"
-    ] == ActionResult(ok=True, message="usb").model_dump()
+    assert (
+        client.put("/v1/devices/robot-pi/usb", json={"on": False}, headers=auth()).json()["data"]
+        == ActionResult(ok=True, message="usb").model_dump()
+    )
 
 
 def test_client_name_from_token(tmp_path: Path) -> None:
@@ -98,9 +100,7 @@ def test_action_not_allowed_409(tmp_path: Path) -> None:
 
 
 def test_agent_error_502_and_internal_500(tmp_path: Path) -> None:
-    client, _ = make_client(
-        tmp_path, pi3=FakeClient(error=HubAgentError("pi3", 500, "boom"))
-    )
+    client, _ = make_client(tmp_path, pi3=FakeClient(error=HubAgentError("pi3", 500, "boom")))
     response = client.get("/v1/program?device=pi3&id=x", headers=auth())
     assert response.status_code == 502
     assert response.json()["error"] == "PI3: boom"
@@ -119,12 +119,9 @@ def test_validation_422(tmp_path: Path) -> None:
 
 def test_pair_uri_format() -> None:
     uri = pair_uri("https://192.0.2.99:7700", "a+b/c=", "ab12")
-    assert uri == (
-        "pa://pair?url=https%3A%2F%2F192.0.2.99%3A7700&token=a%2Bb%2Fc%3D&fp=ab12"
-    )
+    assert uri == ("pa://pair?url=https%3A%2F%2F192.0.2.99%3A7700&token=a%2Bb%2Fc%3D&fp=ab12")
     query = parse_qs(urlparse(uri).query)
     assert query == {"url": ["https://192.0.2.99:7700"], "token": ["a+b/c="], "fp": ["ab12"]}
-
 
 
 @pytest.mark.parametrize(
@@ -149,3 +146,39 @@ def test_agent_header_marks_history(tmp_path: Path, agent: str | None, expected:
     client.post("/v1/devices/pi3/reboot", headers=headers)
     history = client.get("/v1/history", headers=auth()).json()["data"]
     assert {h["client"] for h in history} == {expected}
+
+
+def test_pin_and_unpin_route(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    body = {"device": "jw-pc", "id": "d:b", "pinned": True}
+    response = client.put("/v1/pins", json=body, headers=auth(MCP))
+    assert response.status_code == 200
+    assert response.json()["data"] == {"ok": True, "message": "pinned Beta"}
+    progs = client.get("/v1/programs?device=jw-pc", headers=auth()).json()["data"]
+    assert [(p["id"], p["pinned"], p["pin_key"]) for p in progs] == [
+        ("d:b", True, "d:b"),
+        ("d:a", False, "d:a"),
+    ]
+    unpin = client.put("/v1/pins", json={**body, "pinned": False}, headers=auth())
+    assert unpin.json()["data"] == {"ok": True, "message": "unpinned Beta"}
+    history = client.get("/v1/history", headers=auth()).json()["data"]
+    assert [(h["client"], h["target"], h["action"]) for h in history] == [
+        ("phone", "d:b", "unpin"),
+        ("mcp", "d:b", "pin"),
+    ]
+
+
+def test_pin_unknown_device_or_program_404(tmp_path: Path) -> None:
+    client, _ = make_client(tmp_path)
+    for body in (
+        {"device": "nope", "id": "d:a", "pinned": True},
+        {"device": "jw-pc", "id": "missing", "pinned": True},
+        {"device": "nope", "id": "d:a", "pinned": False},
+    ):
+        response = client.put("/v1/pins", json=body, headers=auth())
+        assert response.status_code == 404, body
+        assert response.json()["success"] is False
+    bad = client.put("/v1/pins", json={"device": "jw-pc", "id": "d:a"}, headers=auth())
+    assert bad.status_code == 422
+    noop = {"device": "jw-pc", "id": "pinned:missing", "pinned": False}
+    assert client.put("/v1/pins", json=noop, headers=auth()).json()["data"]["ok"] is True

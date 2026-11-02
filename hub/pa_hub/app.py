@@ -47,6 +47,12 @@ class UsbRequest(BaseModel):
     on: bool
 
 
+class PinRequest(BaseModel):
+    device: str
+    id: str
+    pinned: bool
+
+
 def pair_uri(url: str, token: str, fingerprint: str) -> str:
     """The pairing URI the phone app scans: scheme `pa://pair`, every value URL-encoded."""
     return (
@@ -135,9 +141,7 @@ def create_app(
         return ok(await service.logs(device, id, lines))
 
     @router.post("/actions")
-    async def actions(
-        body: ActionRequest, name: str = Depends(actor)
-    ) -> ApiResponse[ActionResult]:
+    async def actions(body: ActionRequest, name: str = Depends(actor)) -> ApiResponse[ActionResult]:
         return ok(await service.act(name, body.device, body.id, body.action))
 
     @router.post("/devices/{device_id}/groups/{project}/restart")
@@ -159,6 +163,10 @@ def create_app(
     @router.post("/devices/{device_id}/reboot")
     async def reboot(device_id: str, name: str = Depends(actor)) -> ApiResponse[ActionResult]:
         return ok(await service.reboot(name, device_id))
+
+    @router.put("/pins")
+    async def pins(body: PinRequest, name: str = Depends(actor)) -> ApiResponse[ActionResult]:
+        return ok(await service.set_pinned(name, body.device, body.id, body.pinned))
 
     @router.get("/history")
     async def history(
