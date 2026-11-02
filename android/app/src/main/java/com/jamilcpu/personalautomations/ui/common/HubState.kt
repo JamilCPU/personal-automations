@@ -6,7 +6,11 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -26,10 +30,10 @@ const val HUB_UNREACHABLE = "Can't reach the hub"
 
 /** Persistent banner shown while the hub is unreachable but older data is still on screen. */
 @Composable
-fun HubBanner(modifier: Modifier = Modifier) {
+fun HubBanner(modifier: Modifier = Modifier, text: String = HUB_UNREACHABLE) {
     Surface(modifier.fillMaxWidth(), color = MaterialTheme.colorScheme.errorContainer) {
         Text(
-            HUB_UNREACHABLE,
+            text,
             Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             color = MaterialTheme.colorScheme.onErrorContainer,
             style = MaterialTheme.typography.bodyMedium,
@@ -37,20 +41,27 @@ fun HubBanner(modifier: Modifier = Modifier) {
     }
 }
 
-/** Full-area state while nothing has loaded: a spinner, or the error message with a Retry button. */
+/**
+ * Full-area state while nothing has loaded: a spinner, or the error message with a Retry button.
+ * Scrollable inside a PullToRefreshBox so the pull-to-refresh the copy mentions actually works.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LoadState(error: String?, onRetry: () -> Unit, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        if (error == null) {
-            CircularProgressIndicator()
-        } else {
-            Column(
-                Modifier.padding(24.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Text(error, style = MaterialTheme.typography.bodyLarge)
-                Button(onClick = onRetry) { Text("Retry") }
+fun LoadState(error: String?, onRetry: () -> Unit, modifier: Modifier = Modifier, onRefresh: () -> Unit = onRetry) {
+    val (refreshing, startRefresh) = rememberRefreshing(onRefresh)
+    PullToRefreshBox(isRefreshing = refreshing, onRefresh = startRefresh, modifier = modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
+            if (error == null) {
+                CircularProgressIndicator(Modifier.padding(top = 96.dp))
+            } else {
+                Column(
+                    Modifier.padding(24.dp).padding(top = 72.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(error, style = MaterialTheme.typography.bodyLarge)
+                    Button(onClick = onRetry) { Text("Retry") }
+                }
             }
         }
     }
