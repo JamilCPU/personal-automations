@@ -221,3 +221,25 @@ async def test_path_params_are_encoded(hub) -> None:
     )
     await _call("get_device", {"device": "a/b ?x"})
     assert route.calls.last.request.url.raw_path.startswith(b"/v1/devices/a%2Fb%20%3Fx")
+
+
+async def test_agent_header_carries_client_name(hub) -> None:
+    from mcp.types import Implementation
+
+    route = hub.get("/v1/devices").respond(json={"success": True, "data": [], "error": None})
+    info = Implementation(name="claude-code", version="1.0")
+    async with create_connected_server_and_client_session(_server(), client_info=info) as session:
+        await session.call_tool("list_devices", {})
+    assert route.calls.last.request.headers["x-pa-agent"] == "claude-code"
+
+
+async def test_agent_header_sent_on_actions(hub) -> None:
+    from mcp.types import Implementation
+
+    route = hub.post("/v1/devices/pi3/reboot").respond(
+        json={"success": True, "data": {"ok": True, "message": ""}, "error": None}
+    )
+    info = Implementation(name="codex", version="1.0")
+    async with create_connected_server_and_client_session(_server(), client_info=info) as session:
+        await session.call_tool("reboot_device", {"device": "pi3"})
+    assert route.calls.last.request.headers["x-pa-agent"] == "codex"

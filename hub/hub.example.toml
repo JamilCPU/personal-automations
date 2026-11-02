@@ -1,7 +1,8 @@
 # Copy to hub.toml. Tokens live in hub.secrets.toml (gitignored), shaped like:
 #   [clients]
 #   "<random bearer token>" = "phone"
-#   "<random bearer token>" = "mcp"
+#   "<random bearer token>" = "mcp-stdio"   # local MCP (Claude Code over stdio)
+#   "<random bearer token>" = "mcp-http"    # MCP streamable-HTTP server (other machines)
 #   [device_tokens]          # optional; overrides token_file
 #   pi1 = "<agent token>"
 # %VAR% and ~ in cert_file/key_file/token_file are expanded at load time.

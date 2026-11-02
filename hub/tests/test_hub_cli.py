@@ -16,7 +16,7 @@ def test_init_writes_files_and_refuses_overwrite(tmp_path: Path, capsys) -> None
     for name in ("hub.toml", "hub.secrets.toml", "hub/cert.pem", "hub/key.pem"):
         assert (tmp_path / name).is_file()
     cfg = load_hub_config(tmp_path / "hub.toml", tmp_path / "hub.secrets.toml")
-    assert sorted(cfg.clients.values()) == ["mcp", "phone"]
+    assert sorted(cfg.clients.values()) == ["mcp-http", "mcp-stdio", "phone"]
     assert len(cfg.devices) == 4
     assert cfg.cert_file == str(tmp_path / "hub" / "cert.pem")
     out = capsys.readouterr().out
