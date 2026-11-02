@@ -27,7 +27,8 @@ fun placeholderProgram(device: String, id: String): Program {
     val key = id.removePrefix(PINNED_PREFIX)
     val kind = key.substringBefore(':')
     val rest = key.substringAfter(':')
-    val name = if (kind == "k3s") rest.substringAfter('/').substringBefore('@') else rest
+    // k3s: <ns>/<owner>@<node>; interpreter processes: <name>|<script path or argv>.
+    val name = if (kind == "k3s") rest.substringAfter('/').substringBefore('@') else rest.substringBefore('|')
     return Program(
         id = id, name = name, kind = kind, device = device, status = "stopped",
         description = NOT_RUNNING, pinKey = key, pinned = true,
@@ -47,6 +48,8 @@ data class ProgramDetailUiState(
     val stale: Boolean = false,
     /** A pinned program that is not running (`pinned:` id): only the pin toggle applies. */
     val placeholder: Boolean = false,
+    /** The placeholder was unpinned: nothing is left to show, so the screen goes back. */
+    val closed: Boolean = false,
 )
 
 class ProgramDetailViewModel(
@@ -93,8 +96,9 @@ class ProgramDetailViewModel(
                 failure != null -> _state.update {
                     it.copy(program = it.program?.copy(pinned = !target), error = failure)
                 }
-                // A placeholder has no detail to reload; reloading would re-pin it on screen.
-                !_state.value.placeholder -> reload()
+                // An unpinned placeholder no longer exists on the hub (and cannot be re-pinned).
+                _state.value.placeholder -> _state.update { it.copy(closed = !target) }
+                else -> reload()
             }
         }
     }
