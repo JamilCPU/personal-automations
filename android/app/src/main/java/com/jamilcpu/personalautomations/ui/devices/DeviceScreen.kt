@@ -4,6 +4,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -27,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jamilcpu.personalautomations.data.DeviceSummary
 import com.jamilcpu.personalautomations.ui.common.ConfirmDialog
+import com.jamilcpu.personalautomations.ui.common.HubBanner
 import com.jamilcpu.personalautomations.ui.common.StatusDot
 
 private sealed interface Pending {
@@ -53,6 +55,7 @@ fun DeviceScreen(
         device = device,
         groups = state.groups[deviceId].orEmpty(),
         busy = deviceId in state.busy,
+        stale = state.stale,
         onSetUsb = { viewModel.setUsb(deviceId, it) },
         onRestartGroup = { viewModel.restartGroup(deviceId, it) },
         onReboot = { viewModel.reboot(deviceId) },
@@ -66,6 +69,7 @@ private fun DeviceContent(
     device: DeviceSummary,
     groups: List<String>,
     busy: Boolean,
+    stale: Boolean,
     onSetUsb: (Boolean) -> Unit,
     onRestartGroup: (String) -> Unit,
     onReboot: () -> Unit,
@@ -73,9 +77,11 @@ private fun DeviceContent(
     modifier: Modifier = Modifier,
 ) {
     var pending by remember { mutableStateOf<Pending?>(null) }
-    val canAct = !busy && device.online
+    val canAct = !busy && device.online && !stale
+    Column(modifier.fillMaxSize()) {
+    if (stale) HubBanner()
     Column(
-        modifier.verticalScroll(rememberScrollState()).padding(16.dp),
+        Modifier.verticalScroll(rememberScrollState()).padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -108,6 +114,7 @@ private fun DeviceContent(
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
         ) { Text("Reboot ${device.name}…") }
+    }
     }
 
     when (val p = pending) {
