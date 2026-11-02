@@ -36,6 +36,8 @@ PROC_ATTRS = ["pid", "ppid", "name", "exe", "cmdline", "create_time"]
 UNSUPPORTED = "not supported on jw PC"
 SERVICE_PREFIX = "windows-service:"
 PROCESS_PREFIX = "process:"
+# Interpreter pin keys: process:<name>|<script path or argv>; apps keep process:<ExeStem>.
+PIN_SEPARATOR = "|"
 DOCKER_PREFIX = "docker:"
 GPU_FIELDS = ("temp_c", "util_pct", "mem_used_mb", "mem_total_mb")
 GPU_ARGV = [
@@ -109,12 +111,22 @@ def _exe_stem(exe: str) -> str:
     return stem[:1].upper() + stem[1:]
 
 
-def _script_name(cmdline: list[str]) -> str | None:
+def _script_arg(cmdline: list[str]) -> str:
+    """The script (or `-jar` target) an interpreter runs, as given; "" when there is none."""
     args = cmdline[1:]
     if "-jar" in args and args.index("-jar") + 1 < len(args):
-        script = args[args.index("-jar") + 1]
-    else:
-        script = next((a for a in args if not a.startswith("-")), "")
+        return args[args.index("-jar") + 1]
+    return next((a for a in args if not a.startswith("-")), "")
+
+
+def _interpreter_pin_suffix(cmdline: list[str]) -> str:
+    """Tells apart same-named scripts (two projects' app.py): the script's path, else argv."""
+    text = _script_arg(cmdline) or " ".join(cmdline)
+    return text.replace("/", "\\").lower()
+
+
+def _script_name(cmdline: list[str]) -> str | None:
+    script = _script_arg(cmdline)
     if not script:
         return None
     base = ntpath.basename(script.replace("/", "\\"))
@@ -307,9 +319,13 @@ class LocalWindowsDevice:
         interpreter = _is_interpreter(exe)
         if not (pid in windowed or (interpreter and age >= MIN_AGE_S)):
             return None
-        script = _script_name(info.get("cmdline") or []) if interpreter else None
+        cmdline = list(info.get("cmdline") or [])
+        script = _script_name(cmdline) if interpreter else None
         window = windowed.get(pid, "")
         name = script or _exe_stem(exe) or str(pid)
+        pin_key = f"{PROCESS_PREFIX}{name}"
+        if interpreter:
+            pin_key += f"{PIN_SEPARATOR}{_interpreter_pin_suffix(cmdline)}"
         protection = "locked" if locked else protection_for("process", name)
         # The hub's own tree is plumbing; an interpreter's location says nothing about its script.
         system = locked or (not interpreter and is_system_exe(_text(info.get("exe"))))
@@ -329,7 +345,7 @@ class LocalWindowsDevice:
             protection=protection,
             actions=allowed_actions("process", "running", protection),
             detail=detail,
-            pin_key=f"{PROCESS_PREFIX}{name}",
+            pin_key=pin_key,
         )
 
     def _docker_programs(self) -> list[Program]:

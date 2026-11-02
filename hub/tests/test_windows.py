@@ -138,7 +138,19 @@ async def test_interpreter_keeps_script_name_and_pin_key():
     proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
     (prog,) = await make(procs=[proc], windowed={100: "some title"}).programs()
     assert prog.name == "ComfyUI"
-    assert prog.pin_key == "process:ComfyUI"
+    assert prog.pin_key == "process:ComfyUI|f:\\comfyui\\main.py"
+
+
+async def test_interpreter_pin_keys_disambiguate_same_script_name():
+    a = FakeProc(1, "python.exe", ["python", r"F:\ProjA\app.py"])
+    b = FakeProc(2, "python.exe", ["python", "F:/ProjB/app.py", "--port", "9"])
+    bare = FakeProc(3, "node.exe", ["node", "--inspect"])
+    progs = {p.detail["pid"]: p for p in await make(procs=[a, b, bare]).programs()}
+    assert progs["1"].name == progs["2"].name == "app.py"
+    assert progs["1"].pin_key == r"process:app.py|f:\proja\app.py"
+    assert progs["2"].pin_key == r"process:app.py|f:\projb\app.py"
+    assert progs["3"].name == "Node"
+    assert progs["3"].pin_key == "process:Node|node --inspect"
 
 
 async def test_service_pin_key_is_id():
