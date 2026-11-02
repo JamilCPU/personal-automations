@@ -93,8 +93,10 @@ def _to_program(pod: object, node_devices: dict[str, str], now: datetime) -> Pro
     owner = _owner_name(meta)
     state = _pod_status(status)
     protection = protection_for("k3s", owner)
+    # Owner name + node, not the pod name: stable across pod restarts, so also the pin key.
+    program_id = f"k3s:{namespace}/{owner}@{node}"
     return Program(
-        id=f"k3s:{namespace}/{owner}@{node}",
+        id=program_id,
         name=owner,
         kind="k3s",
         device=device,
@@ -110,6 +112,7 @@ def _to_program(pod: object, node_devices: dict[str, str], now: datetime) -> Pro
             "node": node,
             "restarts": str(_restarts(status)),
         },
+        pin_key=program_id,
     )
 
 
