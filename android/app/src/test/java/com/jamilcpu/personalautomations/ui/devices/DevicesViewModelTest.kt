@@ -143,6 +143,38 @@ class DevicesViewModelTest {
     }
 
     @Test
+    fun groups_only_from_this_devices_docker_programs() = runTest(dispatcher) {
+        fun p(id: String, kind: String, device: String, group: String?) =
+            Program(id = id, name = id, kind = kind, device = device, status = "running", group = group)
+        val hub = FakeHub().apply {
+            programs = HubResult.Ok(
+                listOf(
+                    p("docker:a", "docker", "pi3", "home-studio"),
+                    p("k3s:b", "k3s", "pi3", "lab"),
+                    p("systemd:c", "systemd", "pi3", "units"),
+                    p("docker:d", "docker", "pi1", "pihole"),
+                ),
+            )
+        }
+        val vm = DevicesViewModel(hub)
+        vm.loadGroups("pi3")
+        runCurrent()
+        assertEquals(listOf("home-studio"), vm.state.value.groups["pi3"])
+    }
+
+    @Test
+    fun group_label_robot_pi_keeps_exact_text_others_use_project() {
+        assertEquals("Restart all robot programs", groupRestartLabel("sentinel-ros", listOf("usb", "reboot")))
+        assertEquals("Restart all home-studio programs", groupRestartLabel("home-studio", listOf("reboot")))
+    }
+
+    @Test
+    fun reboot_only_when_capability_present() {
+        assertTrue(canReboot(DeviceSummary(id = "pi3", name = "Pi3", capabilities = listOf("reboot"))))
+        assertFalse(canReboot(DeviceSummary(id = "jw-pc", name = "jw PC")))
+    }
+
+    @Test
     fun usb_not_ok_result_shows_message() = runTest(dispatcher) {
         val hub = FakeHub().apply {
             usbResult = HubResult.Ok(ActionResult(ok = false, message = "lidar not detected after power on"))

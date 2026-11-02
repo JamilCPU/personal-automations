@@ -10,7 +10,7 @@ from collections.abc import Callable, Iterable
 from typing import Any
 
 import psutil
-from pa_core.docker import docker_action, docker_logs, list_docker
+from pa_core.docker import docker_action, docker_group_restart, docker_logs, list_docker
 from pa_core.models import ActionName, ActionResult, Health, Program, Status, UsbState
 from pa_core.policy import (
     ActionNotAllowed,
@@ -409,7 +409,13 @@ class LocalWindowsDevice:
         return _parse_gpu(result.stdout) if result.returncode == 0 else None
 
     async def group_restart(self, project: str) -> ActionResult:
-        raise ActionNotAllowed(UNSUPPORTED)
+        return await asyncio.to_thread(self._group_restart, project)
+
+    def _group_restart(self, project: str) -> ActionResult:
+        containers = [p.detail["container"] for p in self._docker_programs() if p.group == project]
+        if not containers:
+            raise KeyError(project)
+        return docker_group_restart(self._run, project, containers)
 
     async def usb(self) -> UsbState:
         raise ActionNotAllowed(UNSUPPORTED)

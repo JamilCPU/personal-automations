@@ -107,15 +107,17 @@ private fun DeviceContent(
                     onClick = { pending = Pending.Group(project) },
                     enabled = canAct,
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Restart all robot programs") }
+                ) { Text(groupRestartLabel(project, device.capabilities)) }
             }
             TextButton(onClick = onOpenPrograms) { Text("Programs on ${device.name}") }
-            OutlinedButton(
-                onClick = { pending = Pending.Reboot },
-                enabled = canAct,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
-            ) { Text("Reboot ${device.name}…") }
+            if (canReboot(device)) {
+                OutlinedButton(
+                    onClick = { pending = Pending.Reboot },
+                    enabled = canAct,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                ) { Text("Reboot ${device.name}…") }
+            }
         }
     }
 
@@ -136,7 +138,7 @@ private fun DeviceContent(
             onDismiss = { pending = null },
         )
         is Pending.Group -> ConfirmDialog(
-            title = "Restart all robot programs?",
+            title = groupRestartLabel(p.project, device.capabilities) + "?",
             confirmLabel = "Restart",
             onConfirm = { pending = null; onRestartGroup(p.project) },
             onDismiss = { pending = null },
