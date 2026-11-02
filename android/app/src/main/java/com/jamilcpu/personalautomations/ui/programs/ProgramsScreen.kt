@@ -16,6 +16,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -84,13 +85,18 @@ fun ProgramsScreen(
             return@Column
         }
         val (refreshing, startRefresh) = rememberRefreshing(onRefresh)
-        PullToRefreshBox(isRefreshing = refreshing, onRefresh = startRefresh, modifier = Modifier.fillMaxSize()) {
+        PullToRefreshBox(isRefreshing = refreshing || state.refreshing, onRefresh = startRefresh, modifier = Modifier.fillMaxSize()) {
             if (state.programs.isEmpty()) {
                 // Keeps the pull gesture available on an empty list.
                 LazyColumn(Modifier.fillMaxSize()) {
                     item {
                         Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                            Text("No programs")
+                            // Never blank: a spinner while fetching, else the explicit empty message.
+                            if (state.refreshing) {
+                                CircularProgressIndicator(Modifier.padding(top = 48.dp))
+                            } else {
+                                Text(state.emptyMessage() ?: "No programs")
+                            }
                         }
                     }
                 }
