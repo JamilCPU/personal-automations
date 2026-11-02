@@ -24,7 +24,7 @@ EXAMPLE_PATH = Path(__file__).resolve().parent.parent / "hub.example.toml"
 EXAMPLE_HOME = r"%LOCALAPPDATA%\personal-automations"
 EXAMPLE_IP = "192.168.0.99"
 LOOPBACK = "127.0.0.1"
-INIT_CLIENTS = ("phone", "mcp")
+INIT_CLIENTS = ("phone", "mcp-stdio", "mcp-http")
 
 logger = logging.getLogger("pa_hub")
 

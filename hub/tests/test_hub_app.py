@@ -125,3 +125,27 @@ def test_pair_uri_format() -> None:
     query = parse_qs(urlparse(uri).query)
     assert query == {"url": ["https://192.168.0.99:7700"], "token": ["a+b/c="], "fp": ["ab12"]}
 
+
+
+@pytest.mark.parametrize(
+    ("agent", "expected"),
+    [
+        ("claude-code", "mcp:claude-code"),
+        ("Codex_1.2", "mcp:Codex_1.2"),
+        (None, "mcp"),
+        ("", "mcp"),
+        ("bad agent", "mcp"),
+        ("x" * 41, "mcp"),
+        ("evil:name", "mcp"),
+    ],
+)
+def test_agent_header_marks_history(tmp_path: Path, agent: str | None, expected: str) -> None:
+    client, _ = make_client(tmp_path)
+    headers = auth(MCP)
+    if agent is not None:
+        headers["X-PA-Agent"] = agent
+    body = {"device": "pi1", "id": "s:x", "action": "restart"}
+    assert client.post("/v1/actions", json=body, headers=headers).status_code == 200
+    client.post("/v1/devices/pi3/reboot", headers=headers)
+    history = client.get("/v1/history", headers=auth()).json()["data"]
+    assert {h["client"] for h in history} == {expected}

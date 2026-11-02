@@ -2,7 +2,7 @@
 .SYNOPSIS
   Launches the Personal Automations MCP server over streamable HTTP (port 7702).
 .DESCRIPTION
-  Used by the "Personal Automations MCP" scheduled task. Reads the hub's `mcp` client token and
+  Used by the "Personal Automations MCP" scheduled task. Reads the hub's `mcp-http` client token and
   certificate from %LOCALAPPDATA%\personal-automations, then runs `pa-mcp --http`.
   Requires the user environment variable PA_MCP_HTTP_TOKEN (generate one with
   `uv run pa-mcp gen-token`, then `setx PA_MCP_HTTP_TOKEN <token>`). Agents on other machines send
@@ -18,8 +18,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $home_ = Join-Path $env:LOCALAPPDATA 'personal-automations'
 $secrets = Get-Content (Join-Path $home_ 'hub.secrets.toml') -Raw
-$match = [regex]::Match($secrets, '(?m)^\s*"([^"]+)"\s*=\s*"mcp"\s*$')
-if (-not $match.Success) { throw 'No "mcp" client token found in hub.secrets.toml.' }
+$match = [regex]::Match($secrets, '(?m)^\s*"([^"]+)"\s*=\s*"mcp-http"\s*$')
+if (-not $match.Success) { throw 'No "mcp-http" client token found in hub.secrets.toml.' }
 if (-not $env:PA_MCP_HTTP_TOKEN) {
     throw 'PA_MCP_HTTP_TOKEN is not set (uv run pa-mcp gen-token; setx PA_MCP_HTTP_TOKEN <token>).'
 }
