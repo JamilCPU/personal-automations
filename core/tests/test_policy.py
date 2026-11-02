@@ -5,6 +5,7 @@ from pa_core.policy import (
     allowed_actions,
     check_action,
     is_system,
+    is_system_exe,
     protection_for,
 )
 
@@ -175,3 +176,137 @@ def test_network_critical_windows_services_locked(service):
 def test_kube_system_pods_have_no_actions():
     assert allowed_actions("k3s", "running", "none", namespace="kube-system") == []
     assert allowed_actions("k3s", "running", "none", namespace="default") == ["restart"]
+
+
+# ---- Windows auto-filter (real jw listing) ---------------------------------
+
+PF = r"C:\Program Files"
+PF86 = r"C:\Program Files (x86)"
+DEFENDER = r"C:\ProgramData\Microsoft\Windows Defender\Platform\4.18.26100.4-0"
+
+
+@pytest.mark.parametrize(
+    ("name", "display", "status", "binary"),
+    [
+        # stopped services
+        (
+            "BraveElevationService",
+            "Brave Elevation Service",
+            "stopped",
+            PF + r"\BraveSoftware\Brave-Browser\Application\1\elevation_service.exe",
+        ),
+        (
+            "brave",
+            "Brave Update Service (brave)",
+            "stopped",
+            PF86 + r"\BraveSoftware\Update\BraveUpdate.exe",
+        ),
+        (
+            "FvSvc",
+            "NVIDIA FrameView SDK service",
+            "stopped",
+            PF + r"\NVIDIA Corporation\FrameViewSDK\nvfvsdksvc_x64.exe",
+        ),
+        (
+            "WMPNetworkSvc",
+            "Windows Media Player Network Sharing Service",
+            "stopped",
+            PF + r"\Windows Media Player\wmpnetwk.exe",
+        ),
+        # Microsoft-shipped, running
+        (
+            "WinDefend",
+            "Microsoft Defender Antivirus Service",
+            "running",
+            DEFENDER + r"\MsMpEng.exe",
+        ),
+        (
+            "WdNisSvc",
+            "Microsoft Defender Antivirus Network Inspection Service",
+            "running",
+            DEFENDER + r"\NisSrv.exe",
+        ),
+        (
+            "MDCoreSvc",
+            "Microsoft Defender Core Service",
+            "running",
+            DEFENDER + r"\MpDefenderCoreService.exe",
+        ),
+        ("WSLService", "WSL Service", "running", PF + r"\WSL\wslservice.exe"),
+        ("EdgeThing", "Edge", "running", PF86 + r"\Microsoft\Edge\Application\x.exe"),
+        # background helpers by keyword
+        (
+            "NvContainerLocalSystem",
+            "NVIDIA LocalSystem Container",
+            "running",
+            PF + r"\NVIDIA Corporation\NvContainer\nvcontainer.exe",
+        ),
+        ("FooSvc", "Foo Updater", "running", r"D:\Foo\foo.exe"),
+        ("CrashHandler", "Crash Reporter", "running", r"D:\Foo\c.exe"),
+        ("BarTelemetry", "Bar", "running", r"D:\Bar\b.exe"),
+        ("ElevateX", "X Elevation Service", "running", r"D:\X\x.exe"),
+        # Windows dir / unknown binary (existing rule)
+        ("Spooler", "Print Spooler", "running", r"c:\windows\system32\spoolsv.exe"),
+        ("Hidden", "Hidden", "running", None),
+    ],
+)
+def test_windows_service_hidden(name, display, status, binary):
+    assert is_system(
+        "windows-service", name, binary_path=binary, status=status, display_name=display
+    )
+
+
+@pytest.mark.parametrize(
+    ("name", "display", "binary"),
+    [
+        (
+            "CoworkVMService",
+            "Claude",
+            PF + r"\WindowsApps\Claude_1.49585.0.0_x64__pzs8sxrjxfjjc\app\resources\cowork-svc.exe",
+        ),
+        (
+            "Steam Client Service",
+            "Steam Client Service",
+            PF86 + r"\Common Files\Steam\steamservice.exe",
+        ),
+        ("Tailscale", "Tailscale", PF + r"\Tailscale\tailscaled.exe"),
+        ("ClickToRunSvc", "Office", PF + r"\Microsoft Office\root\integration\x.exe"),
+    ],
+)
+def test_windows_service_visible(name, display, binary):
+    assert not is_system(
+        "windows-service", name, binary_path=binary, status="running", display_name=display
+    )
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        r"C:\WINDOWS\explorer.exe",
+        PF
+        + r"\WindowsApps\Microsoft.WindowsNotepad_11.2507.26.0_x64__8wekyb3d8bbwe\Notepad\Notepad.exe",
+        PF + r"\WindowsApps\Microsoft.WindowsTerminal_1.22_x64__8wekyb3d8bbwe\WindowsTerminal.exe",
+        PF86 + r"\Microsoft\Edge\Application\msedge.exe",
+        PF + r"\Microsoft\Copilot\copilot.exe",
+        r"c:\programdata\microsoft\windows defender\x.exe",
+        "C:/Program Files/WSL/wsl.exe",
+    ],
+)
+def test_process_exe_hidden(exe):
+    assert is_system_exe(exe)
+
+
+@pytest.mark.parametrize(
+    "exe",
+    [
+        None,
+        "",
+        PF + r"\WindowsApps\Claude_1.49585.0.0_x64__pzs8sxrjxfjjc\app\claude.exe",
+        PF + r"\Microsoft Office\root\Office16\WINWORD.EXE",
+        r"C:\Users\jamil\AppData\Local\Discord\app-1.0\Discord.exe",
+        PF + r"\BraveSoftware\Brave-Browser\Application\brave.exe",
+        r"D:\Microsoft\tool.exe",
+    ],
+)
+def test_process_exe_visible(exe):
+    assert not is_system_exe(exe)
