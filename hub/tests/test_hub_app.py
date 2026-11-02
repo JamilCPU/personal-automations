@@ -61,9 +61,10 @@ def test_happy_paths(tmp_path: Path) -> None:
     logs = client.get("/v1/logs?device=pi1&id=s:x&lines=5", headers=auth()).json()
     assert logs["data"] == ["line"]
     assert client.get("/v1/devices/robot-pi/usb", headers=auth()).json()["data"]["on"] is True
-    assert client.put("/v1/devices/robot-pi/usb", json={"on": False}, headers=auth()).json()[
-        "data"
-    ] == ActionResult(ok=True, message="usb").model_dump()
+    assert (
+        client.put("/v1/devices/robot-pi/usb", json={"on": False}, headers=auth()).json()["data"]
+        == ActionResult(ok=True, message="usb").model_dump()
+    )
 
 
 def test_client_name_from_token(tmp_path: Path) -> None:
@@ -98,9 +99,7 @@ def test_action_not_allowed_409(tmp_path: Path) -> None:
 
 
 def test_agent_error_502_and_internal_500(tmp_path: Path) -> None:
-    client, _ = make_client(
-        tmp_path, pi3=FakeClient(error=HubAgentError("pi3", 500, "boom"))
-    )
+    client, _ = make_client(tmp_path, pi3=FakeClient(error=HubAgentError("pi3", 500, "boom")))
     response = client.get("/v1/program?device=pi3&id=x", headers=auth())
     assert response.status_code == 502
     assert response.json()["error"] == "PI3: boom"
@@ -119,12 +118,9 @@ def test_validation_422(tmp_path: Path) -> None:
 
 def test_pair_uri_format() -> None:
     uri = pair_uri("https://192.168.0.99:7700", "a+b/c=", "ab12")
-    assert uri == (
-        "pa://pair?url=https%3A%2F%2F192.168.0.99%3A7700&token=a%2Bb%2Fc%3D&fp=ab12"
-    )
+    assert uri == ("pa://pair?url=https%3A%2F%2F192.168.0.99%3A7700&token=a%2Bb%2Fc%3D&fp=ab12")
     query = parse_qs(urlparse(uri).query)
     assert query == {"url": ["https://192.168.0.99:7700"], "token": ["a+b/c="], "fp": ["ab12"]}
-
 
 
 @pytest.mark.parametrize(

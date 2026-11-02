@@ -90,9 +90,7 @@ def cmd_init(args: argparse.Namespace) -> int:
     cert_path.write_bytes(cert_pem)
     key_path.write_bytes(key_pem)
     tokens = {name: secrets.token_urlsafe(32) for name in INIT_CLIENTS}
-    (out / SECRETS_NAME).write_text(
-        render_secrets_toml(tokens), encoding="utf-8"
-    )
+    (out / SECRETS_NAME).write_text(render_secrets_toml(tokens), encoding="utf-8")
     (out / CONFIG_NAME).write_text(render_hub_toml(out, args.ip), encoding="utf-8")
     print(f"config:      {out / CONFIG_NAME}")
     print(f"secrets:     {out / SECRETS_NAME}  (clients: {', '.join(INIT_CLIENTS)})")
