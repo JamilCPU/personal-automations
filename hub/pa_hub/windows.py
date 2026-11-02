@@ -165,8 +165,10 @@ def _descendants(pids: set[int], snap: dict[int, dict[str, Any]]) -> set[int]:
         children = {
             pid
             for pid, info in snap.items()
-            if pid not in found and pid not in pids
-            and (parent := _parent(info, snap)) is not None and parent["pid"] in frontier
+            if pid not in found
+            and pid not in pids
+            and (parent := _parent(info, snap)) is not None
+            and parent["pid"] in frontier
         }
         found |= children
         frontier = children

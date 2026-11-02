@@ -103,7 +103,9 @@ def test_bind_accepts_single_string(tmp_path: Path) -> None:
     init(tmp_path)
     toml = tmp_path / "hub.toml"
     text = toml.read_text(encoding="utf-8")
-    toml.write_text(text.replace('bind = ["192.0.2.197", "127.0.0.1"]', 'bind = "0.0.0.0"'), encoding="utf-8")
+    toml.write_text(
+        text.replace('bind = ["192.0.2.197", "127.0.0.1"]', 'bind = "0.0.0.0"'), encoding="utf-8"
+    )
     assert load_hub_config(toml, tmp_path / "hub.secrets.toml").bind == ["0.0.0.0"]
 
 

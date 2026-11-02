@@ -130,9 +130,7 @@ def build_server(
     async def list_devices() -> Any:
         return await call("GET", "/devices")
 
-    @mcp.tool(
-        description=f"Show one device's summary (online, health, programs). {DEVICES_TEXT}"
-    )
+    @mcp.tool(description=f"Show one device's summary (online, health, programs). {DEVICES_TEXT}")
     async def get_device(device: str) -> Any:
         return await call("GET", f"/devices/{_seg(device)}")
 
@@ -247,9 +245,7 @@ class BearerAuthMiddleware:
             (b"content-length", str(len(body)).encode()),
             (b"www-authenticate", b"Bearer"),
         ]
-        await send(
-            {"type": "http.response.start", "status": HTTP_UNAUTHORIZED, "headers": headers}
-        )
+        await send({"type": "http.response.start", "status": HTTP_UNAUTHORIZED, "headers": headers})
         await send({"type": "http.response.body", "body": body})
 
     def _authorized(self, scope: Scope) -> bool:
