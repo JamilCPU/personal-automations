@@ -480,8 +480,55 @@ async def test_pin_unknown_device_or_program(tmp_path: Path) -> None:
         await service.set_pinned("phone", "nope", "d:a", True)
     with pytest.raises(KeyError):
         await service.set_pinned("phone", "jw-pc", "missing", True)
-    with pytest.raises(KeyError):
-        await service.set_pinned("phone", "jw-pc", "pinned:never", False)
+    # Unpinning something that is not pinned is a no-op success, not a 404.
+    result = await service.set_pinned("phone", "jw-pc", "pinned:never", False)
+    assert result.ok
     hist = await service.recent_history(10)
-    assert len(hist) == 3
-    assert not any(h.ok for h in hist)
+    assert [(h.action, h.ok) for h in hist] == [("unpin", True), ("pin", False), ("pin", False)]
+
+
+async def test_unpin_works_with_device_offline(tmp_path: Path) -> None:
+    service, clients = standard(tmp_path)
+    await service.set_pinned("phone", "robot-pi", "s:r", True)
+    clients["robot-pi"]._error = DeviceOffline("robot-pi")
+    result = await service.set_pinned("phone", "robot-pi", "s:r", False)
+    assert result.ok
+    assert service._pins.all() == []
+    [h, _] = await service.recent_history(10)
+    assert (h.action, h.ok, h.target) == ("unpin", True, "s:r")
+
+
+async def test_unpin_process_by_any_instance_without_device(tmp_path: Path) -> None:
+    first = prog(
+        "process:Discord#1@10", "jw-pc", name="Discord", pin_key="process:Discord", kind="process"
+    )
+    service, clients = standard(tmp_path, **{"jw-pc": FakeClient([first])})
+    await service.set_pinned("phone", "jw-pc", first.id, True)
+    clients["jw-pc"]._error = DeviceOffline("jw-pc")
+    result = await service.set_pinned("phone", "jw-pc", "process:Discord#2@20", False)
+    assert result.ok
+    assert service._pins.all() == []
+
+
+async def test_unpin_is_idempotent(tmp_path: Path) -> None:
+    service, _ = standard(tmp_path)
+    await service.set_pinned("phone", "jw-pc", "d:a", True)
+    assert (await service.set_pinned("phone", "jw-pc", "d:a", False)).ok
+    assert (await service.set_pinned("phone", "jw-pc", "d:a", False)).ok
+    assert (await service.set_pinned("phone", "jw-pc", "missing", False)).ok
+
+
+async def test_unpin_falls_back_to_device_lookup_for_derived_keys(tmp_path: Path) -> None:
+    key = "process:app.py|f:\\proj-a\\app.py"
+    app = prog("process:app.py#5@1", "jw-pc", name="app.py", pin_key=key, kind="process")
+    service, _ = standard(tmp_path, **{"jw-pc": FakeClient([app])})
+    await service.set_pinned("phone", "jw-pc", app.id, True)
+    assert [p.pin_key for p in service._pins.all()] == [key]
+    assert (await service.set_pinned("phone", "jw-pc", app.id, False)).ok
+    assert service._pins.all() == []
+
+
+async def test_unpin_unknown_device_still_404(tmp_path: Path) -> None:
+    service, _ = standard(tmp_path)
+    with pytest.raises(KeyError, match="unknown device"):
+        await service.set_pinned("phone", "nope", "d:a", False)
