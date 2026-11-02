@@ -24,6 +24,11 @@ internal class FakePrograms(var all: List<Program> = emptyList()) : HubClient {
     val actions = mutableListOf<String>()
     var detailCalls = 0
 
+    /** Result of setPinned; on success the fake applies the pin to [all] like the hub does. */
+    var pinResult: HubResult<ActionResult> = HubResult.Ok(ActionResult(true))
+    var pinDelay = 0L
+    val pinCalls = mutableListOf<Triple<String, String, Boolean>>()
+
     override suspend fun devices(): HubResult<List<DeviceSummary>> = HubResult.Ok(emptyList())
 
     override suspend fun programs(device: String?, includeSystem: Boolean): HubResult<List<Program>> {
@@ -43,6 +48,16 @@ internal class FakePrograms(var all: List<Program> = emptyList()) : HubClient {
     override suspend fun act(device: String, id: String, action: String): HubResult<ActionResult> {
         actions += action
         return actResult
+    }
+
+    override suspend fun setPinned(device: String, id: String, pinned: Boolean): HubResult<ActionResult> {
+        pinCalls += Triple(device, id, pinned)
+        if (pinDelay > 0) kotlinx.coroutines.delay(pinDelay)
+        val result = pinResult
+        if (result is HubResult.Ok && result.value.ok) {
+            all = all.map { if (it.device == device && it.id == id) it.copy(pinned = pinned) else it }
+        }
+        return result
     }
 
     override suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult> = HubResult.Ok(ActionResult(true))
@@ -69,7 +84,8 @@ internal fun prog(
     protection: String = "none",
     status: String = "running",
     actions: List<String> = listOf("stop", "restart"),
+    pinned: Boolean = false,
 ) = Program(
     id = id, name = id, kind = "docker", device = device, status = status,
-    system = system, protection = protection, actions = actions,
+    system = system, protection = protection, actions = actions, pinKey = id, pinned = pinned,
 )

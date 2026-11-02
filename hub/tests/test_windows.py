@@ -122,10 +122,84 @@ async def test_young_python_and_windowless_ignored():
     assert await make(procs=procs).programs() == []
 
 
-async def test_windowed_process_listed_with_title():
-    proc = FakeProc(7, "notepad.exe")
-    progs = await make(procs=[proc], windowed={7: "Untitled - Notepad"}).programs()
-    assert progs[0].id == "process:Untitled - Notepad#7@1000"
+async def test_windowed_process_named_by_exe_stem():
+    proc = FakeProc(7, "discord.exe", exe=r"C:\Users\j\AppData\Local\Discord\Discord.exe")
+    title = "discordapp.com/app?_=1793580594810 - Discord"
+    (prog,) = await make(procs=[proc], windowed={7: title}).programs()
+    assert prog.id == "process:Discord#7@1000"
+    assert prog.name == "Discord"
+    assert prog.description == title
+    assert prog.detail["window"] == title
+    assert prog.pin_key == "process:Discord"
+    assert prog.system is False
+
+
+async def test_interpreter_keeps_script_name_and_pin_key():
+    proc = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"])
+    (prog,) = await make(procs=[proc], windowed={100: "some title"}).programs()
+    assert prog.name == "ComfyUI"
+    assert prog.pin_key == "process:ComfyUI|f:\\comfyui\\main.py"
+
+
+async def test_interpreter_pin_keys_disambiguate_same_script_name():
+    a = FakeProc(1, "python.exe", ["python", r"F:\ProjA\app.py"])
+    b = FakeProc(2, "python.exe", ["python", "F:/ProjB/app.py", "--port", "9"])
+    bare = FakeProc(3, "node.exe", ["node", "--inspect"])
+    progs = {p.detail["pid"]: p for p in await make(procs=[a, b, bare]).programs()}
+    assert progs["1"].name == progs["2"].name == "app.py"
+    assert progs["1"].pin_key == r"process:app.py|f:\proja\app.py"
+    assert progs["2"].pin_key == r"process:app.py|f:\projb\app.py"
+    assert progs["3"].name == "Node"
+    assert progs["3"].pin_key == "process:Node|node --inspect"
+
+
+async def test_service_pin_key_is_id():
+    (prog,) = await make(services=[FakeService("Tailscale", "Tailscale")]).programs()
+    assert prog.pin_key == "windows-service:Tailscale"
+
+
+WINAPPS = r"C:\Program Files\WindowsApps"
+
+
+async def test_microsoft_apps_hidden_others_visible():
+    procs = [
+        FakeProc(
+            1, "Notepad.exe", exe=WINAPPS + r"\Microsoft.WindowsNotepad_1_x64__8we\Notepad.exe"
+        ),
+        FakeProc(2, "WindowsTerminal.exe", exe=WINAPPS + r"\Microsoft.WindowsTerminal_1\WT.exe"),
+        FakeProc(3, "msedge.exe", exe=r"C:\Program Files (x86)\Microsoft\Edge\msedge.exe"),
+        FakeProc(4, "claude.exe", exe=WINAPPS + r"\Claude_1.4_x64__pzs\app\claude.exe"),
+        FakeProc(5, "brave.exe", exe=r"C:\Program Files\BraveSoftware\brave.exe"),
+        FakeProc(6, "SidebarDiagnostics.exe", exe=r"D:\Sidebar\SidebarDiagnostics.exe"),
+    ]
+    windowed = {i: f"title {i}" for i in range(1, 7)}
+    progs = await make(procs=procs, windowed=windowed).programs()
+    system = {p.name: p.system for p in progs}
+    assert system == {
+        "Notepad": True,
+        "WindowsTerminal": True,
+        "Msedge": True,
+        "Claude": False,
+        "Brave": False,
+        "SidebarDiagnostics": False,
+    }
+
+
+async def test_interpreter_under_microsoft_jdk_stays_visible():
+    java = r"C:\Program Files\Microsoft\jdk-21\bin\java.exe"
+    proc = FakeProc(9, "java.exe", ["java", "@user_jvm_args.txt", "@win_args.txt"], exe=java)
+    (prog,) = await make(procs=[proc]).programs()
+    assert prog.system is False
+
+
+async def test_stopped_and_helper_services_hidden():
+    svcs = [
+        FakeService("bravem", "Brave Update Service (bravem)", "stopped"),
+        FakeService("NvContainerLocalSystem", "NVIDIA LocalSystem Container"),
+        FakeService("Tailscale", "Tailscale", binpath=r"C:\Program Files\Tailscale\t.exe"),
+    ]
+    system = {p.detail["service"]: p.system for p in await make(services=svcs).programs()}
+    assert system == {"bravem": True, "NvContainerLocalSystem": True, "Tailscale": False}
 
 
 async def test_hub_process_locked():
@@ -134,6 +208,7 @@ async def test_hub_process_locked():
     (prog,) = await dev.programs()
     assert prog.protection == "locked"
     assert prog.actions == []
+    assert prog.system is True
     with pytest.raises(ActionNotAllowed):
         await dev.act(prog.id, "stop")
     assert not proc.terminated
@@ -163,7 +238,8 @@ async def test_service_listing_and_protection():
     assert by_name["OpenSSH"].protection == "locked"
     assert by_name["OpenSSH"].actions == []
     assert by_name["Print Spooler"].system is True
-    assert by_name["My App"].system is False
+    assert by_name["My App"].system is True  # stopped services are hidden
+    assert by_name["Busy"].system is False
     assert by_name["My App"].status == "stopped"
     assert by_name["My App"].actions == ["start"]
     assert by_name["Busy"].status == "restarting"
@@ -282,7 +358,7 @@ async def test_logs_and_unsupported():
 async def test_process_under_windows_dir_is_system():
     explorer = FakeProc(8, "explorer.exe", exe=r"C:\WINDOWS\explorer.exe")
     comfy = FakeProc(100, "python.exe", ["python", r"F:\ComfyUI\main.py"], exe=r"F:\py\python.exe")
-    notepad = FakeProc(9, "notepad.exe")
+    notepad = FakeProc(9, "notepad.exe", exe=r"D:\Tools\notepad.exe")
     windowed = {8: "Program Manager", 9: "n"}
     progs = await make(procs=[explorer, comfy, notepad], windowed=windowed).programs()
     system = {p.detail["pid"]: p.system for p in progs}

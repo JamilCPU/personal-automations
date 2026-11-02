@@ -151,3 +151,9 @@ def test_logs_rejects_option_like_container():
     runner = FakeRunner(RunResult(0, "", ""))
     assert docker_logs(runner, "-f", 10) == []
     assert runner.calls == []
+
+
+def test_pin_key_is_container_id():
+    programs = list_docker(_ps_runner(), "robot-pi")
+    assert programs
+    assert all(p.pin_key == p.id for p in programs)

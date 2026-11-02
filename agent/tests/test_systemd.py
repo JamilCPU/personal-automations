@@ -159,3 +159,9 @@ def test_inactive_template_unit_is_system_but_failed_is_not():
         "foo@qux.service": False,
         "code-server@x.service": False,
     }
+
+
+def test_pin_key_is_unit_id():
+    programs = _fixture_programs()[1]
+    assert programs
+    assert all(p.pin_key == p.id for p in programs)

@@ -1,5 +1,6 @@
 """Program policy: system-program filter, protection levels, allowed actions."""
 
+import re
 from fnmatch import fnmatchcase
 
 from pa_core.models import ActionName, Kind, Program, Protection, Status
@@ -113,6 +114,18 @@ _TEMPLATE_PATTERN = "*@*"
 _TEMPLATE_ALLOWLIST: tuple[str, ...] = ("code-server@*",)
 
 _WINDOWS_DIR = "c:\\windows\\"
+# Microsoft-shipped software outside C:\Windows: a `Microsoft` folder directly under
+# Program Files* or ProgramData, Microsoft.* Store packages, and named Microsoft product dirs.
+# Matched against a lower-cased, backslash-separated path.
+_MICROSOFT_PATH = re.compile(
+    r"^[a-z]:\\(?:"
+    r"(?:program files(?: \(x86\))?|programdata)\\microsoft\\"
+    r"|program files\\windowsapps\\microsoft\."
+    r"|program files(?: \(x86\))?\\(?:wsl|windows [^\\]+|internet explorer)\\"
+    r")"
+)
+# Background helpers: updaters, elevation shims, crash/telemetry agents, NVIDIA containers.
+_HELPER_WORDS: tuple[str, ...] = ("update", "elevation", "crash", "telemetry", "container")
 _SERVICE_SUFFIX = ".service"
 
 
@@ -128,6 +141,23 @@ def _is_idle_template(base: str, active_state: str | None) -> bool:
     if active_state != "inactive" or not fnmatchcase(base, _TEMPLATE_PATTERN):
         return False
     return not any(fnmatchcase(base, pattern) for pattern in _TEMPLATE_ALLOWLIST)
+
+
+def is_system_exe(exe_path: str | None) -> bool:
+    """True for executables that Windows or Microsoft ship (case-insensitive, / or \\)."""
+    if not exe_path:
+        return False
+    path = exe_path.replace("/", "\\").lower()
+    return path.startswith(_WINDOWS_DIR) or _MICROSOFT_PATH.match(path) is not None
+
+
+def _is_system_service(
+    name: str, binary_path: str | None, status: Status | None, display_name: str
+) -> bool:
+    if binary_path is None or status == "stopped" or is_system_exe(binary_path):
+        return True
+    text = f"{name} {display_name}".lower()
+    return any(word in text for word in _HELPER_WORDS)
 
 
 def protection_for(kind: Kind, name: str, extra_locked: frozenset[str] = frozenset()) -> Protection:
@@ -149,6 +179,8 @@ def is_system(
     namespace: str | None = None,
     binary_path: str | None = None,
     active_state: str | None = None,
+    status: Status | None = None,
+    display_name: str = "",
 ) -> bool:
     if kind == "systemd":
         base = _strip_service(name)
@@ -158,7 +190,7 @@ def is_system(
     if kind == "k3s":
         return namespace == KUBE_SYSTEM
     if kind == "windows-service":
-        return binary_path is None or binary_path.lower().startswith(_WINDOWS_DIR)
+        return _is_system_service(name, binary_path, status, display_name)
     return False
 
 

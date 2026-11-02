@@ -27,8 +27,9 @@ def _to_program(row: object, device: str) -> Program | None:
     active = str(row.get("active", "")).lower()
     status = _ACTIVE_TO_STATUS.get(active, "unknown")
     protection = protection_for("systemd", unit)
+    program_id = f"systemd:{unit}"
     return Program(
-        id=f"systemd:{unit}",
+        id=program_id,
         name=unit,
         kind="systemd",
         device=device,
@@ -38,6 +39,7 @@ def _to_program(row: object, device: str) -> Program | None:
         protection=protection,
         actions=allowed_actions("systemd", status, protection),
         detail={"sub": str(row.get("sub", ""))},
+        pin_key=program_id,
     )
 
 
