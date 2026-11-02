@@ -17,6 +17,7 @@ from pa_hub.pins import Pin, PinStore
 
 K3S_PREFIX = "k3s:"
 PINNED_PREFIX = "pinned:"
+PROCESS_PREFIX = "process:"
 NOT_RUNNING = "Not running"
 DETAIL_HISTORY_LIMIT = 10
 DEFAULT_ACTION_TIMEOUT_S = 30.0
@@ -309,14 +310,33 @@ class HubService:
 
     async def set_pinned(self, client: str, device_id: str, pid: str, pinned: bool) -> ActionResult:
         async def call() -> ActionResult:
+            if not pinned:
+                return await self._unpin(device_id, pid)
             pin = await self._resolve_pin(device_id, pid)
-            if pinned:
-                await asyncio.to_thread(self._pins.add, pin)
-                return ActionResult(ok=True, message=f"pinned {pin.name}")
-            await asyncio.to_thread(self._pins.remove, pin.device, pin.pin_key)
-            return ActionResult(ok=True, message=f"unpinned {pin.name}")
+            await asyncio.to_thread(self._pins.add, pin)
+            return ActionResult(ok=True, message=f"pinned {pin.name}")
 
         return await self._record(client, device_id, pid, "pin" if pinned else "unpin", call)
+
+    async def _unpin(self, device_id: str, pid: str) -> ActionResult:
+        """Idempotent and device-free when the key can be derived from the id.
+
+        Only when that removes nothing is the device asked for the program's real pin key
+        (interpreter processes); if it cannot answer, or nothing is pinned, that is still ok.
+        """
+        self._client(device_id)
+        stored = await asyncio.to_thread(self._pins.get, device_id, _candidate_key(pid))
+        if stored is None and not pid.startswith(PINNED_PREFIX):
+            try:
+                stored = await self._resolve_pin(device_id, pid)
+            except (KeyError, DeviceOffline, HubAgentError):
+                stored = None
+        if stored is None:
+            return ActionResult(ok=True, message=f"{pid} was not pinned")
+        removed = await asyncio.to_thread(self._pins.remove, device_id, stored.pin_key)
+        if not removed:
+            return ActionResult(ok=True, message=f"{stored.name} was not pinned")
+        return ActionResult(ok=True, message=f"unpinned {stored.name}")
 
     async def _resolve_pin(self, device_id: str, pid: str) -> Pin:
         """The pin for `pid`: a placeholder's stored pin, else one built from the live program."""
@@ -343,6 +363,19 @@ class HubService:
             return await self._call(device_id, target.reboot(), mutating=True)
 
         return await self._record(client, device_id, "reboot", "reboot", call)
+
+
+def _candidate_key(pid: str) -> str:
+    """The pin key an id most likely has, without asking the device.
+
+    `pinned:<key>` -> key; `process:<name>#pid@stamp` -> `process:<name>`; anything else is
+    its own key. Interpreter processes carry a longer key, found via the device instead.
+    """
+    if pid.startswith(PINNED_PREFIX):
+        return pid.removeprefix(PINNED_PREFIX)
+    if pid.startswith(PROCESS_PREFIX) and "#" in pid:
+        return pid.rsplit("#", 1)[0]
+    return pid
 
 
 def _with_pin(program: Program, pinned: set[tuple[str, str]]) -> Program:
