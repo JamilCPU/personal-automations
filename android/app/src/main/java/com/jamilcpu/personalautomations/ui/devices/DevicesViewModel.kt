@@ -7,6 +7,7 @@ import com.jamilcpu.personalautomations.data.ActionResult
 import com.jamilcpu.personalautomations.data.DeviceSummary
 import com.jamilcpu.personalautomations.data.HubClient
 import com.jamilcpu.personalautomations.data.HubResult
+import com.jamilcpu.personalautomations.data.Program
 import com.jamilcpu.personalautomations.ui.common.HUB_UNREACHABLE
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,9 +30,19 @@ data class DevicesUiState(
     val stale: Boolean = false,
     val loaded: Boolean = false,
     val busy: Set<String> = emptySet(),
-    /** Robot-program group names (project) per device id, for "Restart all" buttons. */
+    /** Docker compose projects per device id (this device's own containers), for "Restart all" buttons. */
     val groups: Map<String, List<String>> = emptyMap(),
 )
+
+/** Compose projects of Docker programs running on [deviceId]; only these support group restart. */
+fun restartGroups(programs: List<Program>, deviceId: String): List<String> =
+    programs.filter { it.kind == "docker" && it.device == deviceId }.mapNotNull { it.group }.distinct()
+
+/** The Robot Pi (the device with switchable USB) keeps its original wording. */
+fun groupRestartLabel(project: String, capabilities: List<String>): String =
+    if ("usb" in capabilities) "Restart all robot programs" else "Restart all $project programs"
+
+fun canReboot(device: DeviceSummary): Boolean = "reboot" in device.capabilities
 
 /** Banner text: unreachable, or the hub's own error while older data is shown. */
 val DevicesUiState.banner: String?
@@ -75,7 +86,7 @@ class DevicesViewModel(private val api: HubClient) : ViewModel() {
         viewModelScope.launch {
             val result = api.programs(device = deviceId, includeSystem = true)
             if (result is HubResult.Ok) {
-                val groups = result.value.mapNotNull { it.group }.distinct()
+                val groups = restartGroups(result.value, deviceId)
                 _state.update { it.copy(groups = it.groups + (deviceId to groups)) }
             }
         }
