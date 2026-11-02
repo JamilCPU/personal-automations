@@ -31,7 +31,7 @@ Reads time out after 3 s (`timeout_s`); mutating calls after 30 s (`action_timeo
 |-----------------|------|--------|
 | `GET /devices` | | `DeviceSummary[]` (id, name, role, ip, online, health, programs_running, programs_total, capabilities, usb) |
 | `GET /devices/{id}` | | `DeviceSummary` |
-| `GET /programs?device=&include_system=false` | | `Program[]` (k3s pods appear under the device they run on) |
+| `GET /programs?device=&include_system=false` | | `Program[]` (k3s pods appear under the device they run on; pinned programs first) |
 | `GET /program?device=&id=` | | `{program, history}` |
 | `GET /logs?device=&id=&lines=100` | | `string[]` |
 | `POST /actions` | `{device, id, action}` (`start`, `stop`, `restart`) | `{ok, message}` |
@@ -39,9 +39,16 @@ Reads time out after 3 s (`timeout_s`); mutating calls after 30 s (`action_timeo
 | `GET /devices/{id}/usb` | | `{on, detail}` (devices with the `usb` capability) |
 | `PUT /devices/{id}/usb` | `{on}` | `{ok, message}` |
 | `POST /devices/{id}/reboot` | | `{ok, message}` (devices with the `reboot` capability) |
+| `PUT /pins` | `{device, id, pinned}` | `{ok, message}` (recorded in history as `pin` / `unpin`) |
 | `GET /history?limit=50&device=` | | `HistoryEntry[]` (ts, client, device, target, action, ok, message) |
 
 Program ids that start with `k3s:` are routed to the k3s source device (Pi1) whichever `device` is given.
+
+### System programs and pinning
+
+`system: true` programs are hidden unless `include_system=true`. Besides Linux plumbing and `kube-system` pods, on Windows that means: services that are stopped, live under `C:\Windows`, are Microsoft-shipped (`Program Files*\Microsoft\`, `ProgramData\Microsoft\`, `WindowsApps\Microsoft.*`, `Program Files\WSL`) or look like background helpers (`update`, `elevation`, `crash`, `telemetry`, `container` in the service or display name); windowed processes with a Microsoft-shipped executable; and the hub's own process tree. Windowed processes are named after their executable (`Discord`); the window title is the `description`.
+
+Every `Program` carries `pin_key` (stable across restarts: the id, or `process:<name>` for processes) and `pinned`. `PUT /pins` resolves `id` on the device and stores `(device, pin_key)`; unknown device or program is a 404. Pinned programs are always listed, even when `system`, and sort first. A pinned program that is not running on an online device is listed as a placeholder: `id` `pinned:<pin_key>`, `status` `stopped`, `description` `Not running`, no actions. `GET /program` on a placeholder id returns 404; `PUT /pins` with `pinned: false` on it unpins. Device program counts include visible pinned programs.
 
 ## Pairing
 
@@ -68,7 +75,7 @@ From an elevated PowerShell: `hub\deploy\install-hub.ps1` (task at logon, firewa
 
 ## MCP server
 
-`pa-mcp` (package `mcp/`) exposes the same actions as MCP tools: `list_devices`, `get_device`, `list_programs`, `get_program`, `get_program_logs`, `program_action`, `restart_group`, `get_usb_power`, `set_usb_power`, `reboot_device`, `recent_history`. Each returns the hub's `data` or raises a tool error carrying the hub's `error` text. There is no confirmation step.
+`pa-mcp` (package `mcp/`) exposes the same actions as MCP tools: `list_devices`, `get_device`, `list_programs`, `get_program`, `get_program_logs`, `program_action`, `restart_group`, `get_usb_power`, `set_usb_power`, `reboot_device`, `recent_history`, `pin_program`. Each returns the hub's `data` or raises a tool error carrying the hub's `error` text. There is no confirmation step.
 
 Environment: `PA_HUB_URL` (for example `https://192.168.0.197:7700`), `PA_HUB_TOKEN` (the `mcp-stdio` client token for stdio, `mcp-http` for the HTTP server), `PA_HUB_CERT` (path to the hub `cert.pem`, pinned).
 

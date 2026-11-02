@@ -16,6 +16,7 @@ from pa_hub.app import Closer, create_app, pair_uri
 from pa_hub.clients import DeviceClient, RemoteAgentClient, UnavailableDevice
 from pa_hub.config import HubConfig, default_home, load_hub_config
 from pa_hub.history import HistoryStore
+from pa_hub.pins import PinStore
 from pa_hub.service import HubService
 from pa_hub.windows import LocalWindowsDevice
 
@@ -57,6 +58,7 @@ def build_service(cfg: HubConfig) -> tuple[HubService, list[Closer]]:
         HistoryStore(cfg.db_path),
         cfg.timeout_s,
         action_timeout_s=cfg.action_timeout_s,
+        pins=PinStore(cfg.db_path),
     )
     return service, closers
 
