@@ -121,4 +121,31 @@ class HubApiTest {
         socket.take(4).forEach { assertTrue("socket timeout $it", (it ?: 0L) >= 35_000L) }
         assertTrue((socket[4] ?: 0L) in 1L..10_000L)
     }
+
+    @Test
+    fun setPinnedPutsJsonBodyAndProgramDecodesPinFields() = runTest {
+        var seen: HttpRequestData? = null
+        var body = ""
+        val r = api { req ->
+            seen = req
+            body = String(req.body.toByteArray())
+            respond("""{"success":true,"data":{"ok":true,"message":"pinned Discord"},"error":null}""", HttpStatusCode.OK, json)
+        }.setPinned("jw-pc", "process:Discord#7@1000", true)
+        assertEquals(HttpMethod.Put, seen!!.method)
+        assertEquals("https://192.0.2.99:7700/v1/pins", seen!!.url.toString())
+        assertEquals("""{"device":"jw-pc","id":"process:Discord#7@1000","pinned":true}""", body)
+        assertEquals(ActionResult(true, "pinned Discord"), (r as HubResult.Ok).value)
+
+        val programs = api {
+            respond(
+                """{"success":true,"data":[{"id":"pinned:process:Discord","name":"Discord","kind":"process",
+                  "device":"jw-pc","status":"stopped","pin_key":"process:Discord","pinned":true}],"error":null}""",
+                HttpStatusCode.OK,
+                json,
+            )
+        }.programs("jw-pc", false)
+        val p = (programs as HubResult.Ok).value.single()
+        assertEquals("process:Discord", p.pinKey)
+        assertTrue(p.pinned)
+    }
 }
