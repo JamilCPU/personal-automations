@@ -17,8 +17,23 @@ LOCKED: frozenset[str] = frozenset(
         "k3s-agent.service",
         "NetworkManager.service",
         "systemd-networkd.service",
+        # network-critical: stopping any of these cuts the box off the LAN
+        "wpa_supplicant.service",
+        "dbus.service",
+        "dbus-broker.service",
+        "networking.service",
+        "dhcpcd.service",
+        "systemd-resolved.service",
+        # Windows network stack and firewall (matched case-insensitively)
+        "WlanSvc",
+        "NlaSvc",
+        "netprofm",
+        "Dhcp",
+        "Dnscache",
+        "mpssvc",
     }
 )
+KUBE_SYSTEM = "kube-system"
 CONFIRM: frozenset[str] = frozenset({"pihole-FTL.service"})
 
 _SYSTEMD_SYSTEM_PATTERNS: tuple[str, ...] = (
@@ -141,17 +156,19 @@ def is_system(
             return True
         return _is_idle_template(base, active_state)
     if kind == "k3s":
-        return namespace == "kube-system"
+        return namespace == KUBE_SYSTEM
     if kind == "windows-service":
         return binary_path is None or binary_path.lower().startswith(_WINDOWS_DIR)
     return False
 
 
-def allowed_actions(kind: Kind, status: Status, protection: Protection) -> list[ActionName]:
+def allowed_actions(
+    kind: Kind, status: Status, protection: Protection, namespace: str | None = None
+) -> list[ActionName]:
     if protection == "locked":
         return []
     if kind == "k3s":
-        return ["restart"]
+        return [] if namespace == KUBE_SYSTEM else ["restart"]
     if kind == "process":
         return ["stop"] if status == "running" else []
     if status in ("running", "restarting"):

@@ -67,6 +67,7 @@ def test_kube_system_is_system():
     kube = [p for p in programs if p.detail["namespace"] == "kube-system"]
     assert kube
     assert all(p.system for p in kube)
+    assert all(p.actions == [] for p in kube)
     assert not any(p.system for p in programs if p.detail["namespace"] == "lab")
 
 
@@ -77,7 +78,9 @@ def test_completed_jobs_skipped():
 
 def test_only_restart_allowed():
     _, programs = _fixture_programs()
-    assert all(p.actions == ["restart"] for p in programs)
+    user = [p for p in programs if p.detail["namespace"] != "kube-system"]
+    assert user
+    assert all(p.actions == ["restart"] for p in user)
 
 
 def test_restart_argv_uses_current_pod_name():
