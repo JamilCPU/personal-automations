@@ -130,9 +130,7 @@ def build_server(
     async def list_devices() -> Any:
         return await call("GET", "/devices")
 
-    @mcp.tool(
-        description=f"Show one device's summary (online, health, programs). {DEVICES_TEXT}"
-    )
+    @mcp.tool(description=f"Show one device's summary (online, health, programs). {DEVICES_TEXT}")
     async def get_device(device: str) -> Any:
         return await call("GET", f"/devices/{_seg(device)}")
 
@@ -140,7 +138,9 @@ def build_server(
         description=(
             "List programs (Docker containers, services, k3s pods, processes) on one device, "
             "or on all devices when device is omitted. System programs are hidden unless "
-            f"include_system is true. {DEVICES_TEXT}"
+            "include_system is true. Pinned programs (pinned=true) are always listed, first; "
+            'a pinned program that is not running shows as id "pinned:<pin_key>" with status '
+            f"stopped. {DEVICES_TEXT}"
         )
     )
     async def list_programs(device: str | None = None, include_system: bool = False) -> Any:
@@ -178,6 +178,19 @@ def build_server(
     async def program_action(device: str, program_id: str, action: ProgramAction) -> Any:
         return await call(
             "POST", "/actions", body={"device": device, "id": program_id, "action": action}
+        )
+
+    @mcp.tool(
+        description=(
+            "Pin (pinned=true) or unpin a program so it always shows first in list_programs, "
+            "even when it is a system program or not running. Pins survive restarts. "
+            f"{PROGRAM_ID_TEXT} A pinned:<pin_key> id from list_programs also works. "
+            f"{DEVICES_TEXT}"
+        )
+    )
+    async def pin_program(device: str, program_id: str, pinned: bool) -> Any:
+        return await call(
+            "PUT", "/pins", body={"device": device, "id": program_id, "pinned": pinned}
         )
 
     @mcp.tool(
@@ -247,9 +260,7 @@ class BearerAuthMiddleware:
             (b"content-length", str(len(body)).encode()),
             (b"www-authenticate", b"Bearer"),
         ]
-        await send(
-            {"type": "http.response.start", "status": HTTP_UNAUTHORIZED, "headers": headers}
-        )
+        await send({"type": "http.response.start", "status": HTTP_UNAUTHORIZED, "headers": headers})
         await send({"type": "http.response.body", "body": body})
 
     def _authorized(self, scope: Scope) -> bool:

@@ -1,5 +1,6 @@
 package com.jamilcpu.personalautomations.ui.programs
 
+import com.jamilcpu.personalautomations.data.ActionResult
 import com.jamilcpu.personalautomations.data.HubResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -228,5 +229,52 @@ class ProgramsViewModelTest {
         assertTrue(vm.state.value.stale)
         assertNull(vm.state.value.emptyMessage())
         vm.stop()
+    }
+
+    @Test
+    fun pinned_programs_are_listed_first() = runTest(dispatcher) {
+        val hub = FakePrograms(listOf(prog("a"), prog("b", device = "pi1", pinned = true)))
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.start()
+        runCurrent()
+        assertEquals(listOf("b", "a"), vm.state.value.programs.map { it.id })
+        vm.stop()
+    }
+
+    @Test
+    fun toggle_pin_is_optimistic_then_confirmed() = runTest(dispatcher) {
+        val hub = FakePrograms(listOf(prog("a"), prog("b")))
+        hub.pinDelay = 1_000
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.refresh()
+        runCurrent()
+        vm.togglePin(vm.state.value.programs.single { it.id == "b" })
+        runCurrent()
+        // Optimistic: pinned and moved to the top before the hub answers.
+        assertEquals(listOf("b" to true, "a" to false), vm.state.value.programs.map { it.id to it.pinned })
+        assertEquals(listOf(Triple("robot-pi", "b", true)), hub.pinCalls)
+        advanceTimeBy(1_001)
+        runCurrent()
+        assertEquals(listOf("b" to true, "a" to false), vm.state.value.programs.map { it.id to it.pinned })
+        assertNull(vm.state.value.error)
+    }
+
+    @Test
+    fun toggle_pin_rolls_back_on_failure() = runTest(dispatcher) {
+        val hub = FakePrograms(listOf(prog("a"), prog("b", pinned = true)))
+        hub.pinResult = HubResult.Err("Robot Pi is offline", 503)
+        val vm = ProgramsViewModel(hub, FakePrefs())
+        vm.refresh()
+        runCurrent()
+        vm.togglePin(vm.state.value.programs.single { it.id == "b" })
+        runCurrent()
+        assertEquals(listOf("b" to true, "a" to false), vm.state.value.programs.map { it.id to it.pinned })
+        assertEquals("Robot Pi is offline", vm.state.value.banner)
+
+        hub.pinResult = HubResult.Ok(ActionResult(false, "nope"))
+        vm.togglePin(vm.state.value.programs.single { it.id == "a" })
+        runCurrent()
+        assertFalse(vm.state.value.programs.single { it.id == "a" }.pinned)
+        assertEquals("nope", vm.state.value.banner)
     }
 }

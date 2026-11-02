@@ -52,6 +52,9 @@ private class FakeHub : HubClient {
         return usbResult
     }
 
+    override suspend fun setPinned(device: String, id: String, pinned: Boolean): HubResult<ActionResult> =
+        HubResult.Ok(ActionResult(true))
+
     override suspend fun reboot(device: String): HubResult<ActionResult> {
         rebootGate?.await()
         rebooted += device

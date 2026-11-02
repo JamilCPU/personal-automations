@@ -25,6 +25,9 @@ class Program(BaseModel):
     actions: list[ActionName]
     group: str | None = None
     detail: dict[str, str] = Field(default_factory=dict)
+    # Stable across restarts (no pid/pod hash); the hub falls back to `id` when empty.
+    pin_key: str = ""
+    pinned: bool = False
 
 
 class Health(BaseModel):

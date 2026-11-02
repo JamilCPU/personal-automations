@@ -24,6 +24,9 @@ data class Program(
     val actions: List<String> = emptyList(),
     val group: String? = null,
     val detail: Map<String, String> = emptyMap(),
+    /** Stable across restarts; what the hub pins by. */
+    @SerialName("pin_key") val pinKey: String = "",
+    val pinned: Boolean = false,
 )
 
 @Serializable
@@ -79,6 +82,9 @@ internal data class ActionRequest(val device: String, val id: String, val action
 
 @Serializable
 internal data class UsbRequest(val on: Boolean)
+
+@Serializable
+internal data class PinRequest(val device: String, val id: String, val pinned: Boolean)
 
 sealed interface HubResult<out T> {
     data class Ok<out T>(val value: T) : HubResult<T>

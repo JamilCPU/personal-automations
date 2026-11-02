@@ -15,7 +15,25 @@ import kotlinx.coroutines.launch
 
 const val GONE_MESSAGE = "This program no longer exists — pull to refresh"
 const val LOG_LINES = 50
+const val NOT_RUNNING = "Not running"
 private const val NOT_FOUND = 404
+private const val PINNED_PREFIX = "pinned:"
+
+/**
+ * A pinned program with nothing running behind it: the hub lists it as `pinned:<pin_key>`,
+ * which has no detail (404), so the screen builds it from the key.
+ */
+fun placeholderProgram(device: String, id: String): Program {
+    val key = id.removePrefix(PINNED_PREFIX)
+    val kind = key.substringBefore(':')
+    val rest = key.substringAfter(':')
+    // k3s: <ns>/<owner>@<node>; interpreter processes: <name>|<script path or argv>.
+    val name = if (kind == "k3s") rest.substringAfter('/').substringBefore('@') else rest.substringBefore('|')
+    return Program(
+        id = id, name = name, kind = kind, device = device, status = "stopped",
+        description = NOT_RUNNING, pinKey = key, pinned = true,
+    )
+}
 
 data class ProgramDetailUiState(
     val loading: Boolean = true,
@@ -28,6 +46,10 @@ data class ProgramDetailUiState(
     val gone: Boolean = false,
     /** Hub unreachable after data had loaded: banner, actions greyed out. */
     val stale: Boolean = false,
+    /** A pinned program that is not running (`pinned:` id): only the pin toggle applies. */
+    val placeholder: Boolean = false,
+    /** The placeholder was unpinned: nothing is left to show, so the screen goes back. */
+    val closed: Boolean = false,
 )
 
 class ProgramDetailViewModel(
@@ -57,6 +79,27 @@ class ProgramDetailViewModel(
         viewModelScope.launch {
             val logs = api.logs(device, id, LOG_LINES)
             if (logs is HubResult.Ok) _state.update { it.copy(logs = logs.value) }
+        }
+    }
+
+    /** Pin or unpin: shown at once, rolled back with the error if the hub refuses. */
+    fun togglePin() {
+        val program = _state.value.program ?: return
+        val target = !program.pinned
+        _state.update { it.copy(program = program.copy(pinned = target), error = null) }
+        viewModelScope.launch {
+            val failure = when (val result = api.setPinned(device, id, target)) {
+                is HubResult.Ok -> result.value.takeIf { !it.ok }?.message?.ifBlank { PIN_FAILED }
+                is HubResult.Err -> result.message
+            }
+            when {
+                failure != null -> _state.update {
+                    it.copy(program = it.program?.copy(pinned = !target), error = failure)
+                }
+                // An unpinned placeholder no longer exists on the hub (and cannot be re-pinned).
+                _state.value.placeholder -> _state.update { it.copy(closed = !target) }
+                else -> reload()
+            }
         }
     }
 
@@ -91,6 +134,10 @@ class ProgramDetailViewModel(
             }
             is HubResult.Err -> _state.update {
                 when {
+                    detail.code == NOT_FOUND && id.startsWith(PINNED_PREFIX) -> it.copy(
+                        loading = false, placeholder = true, gone = false, error = null,
+                        program = it.program ?: placeholderProgram(device, id),
+                    )
                     detail.code == NOT_FOUND -> it.copy(loading = false, gone = true, error = GONE_MESSAGE)
                     it.program != null && detail.code == 0 -> it.copy(loading = false, stale = true)
                     else -> it.copy(loading = false, error = detail.message)

@@ -22,6 +22,7 @@ EXPECTED_TOOLS = {
     "set_usb_power",
     "reboot_device",
     "recent_history",
+    "pin_program",
 }
 
 
@@ -94,6 +95,28 @@ async def test_action_posts_body(hub) -> None:
         "id": "docker:sentinel-ros-lidar-1",
         "action": "restart",
     }
+
+
+async def test_pin_program_puts_body(hub) -> None:
+    route = hub.put("/v1/pins").respond(
+        json={"success": True, "data": {"ok": True, "message": "pinned Discord"}, "error": None}
+    )
+    result = await _call(
+        "pin_program",
+        {"device": "jw-pc", "program_id": "process:Discord#7@1000", "pinned": True},
+    )
+    assert not result.isError
+    assert json.loads(route.calls.last.request.content) == {
+        "device": "jw-pc",
+        "id": "process:Discord#7@1000",
+        "pinned": True,
+    }
+
+
+async def test_list_programs_mentions_pinning() -> None:
+    async with create_connected_server_and_client_session(_server()) as session:
+        tools = {t.name: t for t in (await session.list_tools()).tools}
+    assert "pinned" in (tools["list_programs"].description or "").lower()
 
 
 async def test_list_programs_query_and_usb_body(hub) -> None:

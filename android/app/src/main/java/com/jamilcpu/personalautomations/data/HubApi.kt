@@ -64,6 +64,8 @@ interface HubClient {
 
     suspend fun act(device: String, id: String, action: String): HubResult<ActionResult>
 
+    suspend fun setPinned(device: String, id: String, pinned: Boolean): HubResult<ActionResult>
+
     suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult>
 
     suspend fun reboot(device: String): HubResult<ActionResult>
@@ -103,6 +105,13 @@ class HubApi(private val client: HttpClient, settings: HubSettings) : HubClient 
             post = true,
             path = "/actions",
             body = hubJson.encodeToString(ActionRequest.serializer(), ActionRequest(device, id, action)),
+        )
+
+    override suspend fun setPinned(device: String, id: String, pinned: Boolean): HubResult<ActionResult> =
+        mutate(
+            post = false,
+            path = "/pins",
+            body = hubJson.encodeToString(PinRequest.serializer(), PinRequest(device, id, pinned)),
         )
 
     override suspend fun restartGroup(device: String, project: String): HubResult<ActionResult> =
