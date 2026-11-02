@@ -58,6 +58,12 @@ interface HubClient {
 
     suspend fun programs(device: String?, includeSystem: Boolean): HubResult<List<Program>>
 
+    suspend fun program(device: String, id: String): HubResult<ProgramDetail>
+
+    suspend fun logs(device: String, id: String, lines: Int): HubResult<List<String>>
+
+    suspend fun act(device: String, id: String, action: String): HubResult<ActionResult>
+
     suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult>
 
     suspend fun reboot(device: String): HubResult<ActionResult>
@@ -79,20 +85,20 @@ class HubApi(private val client: HttpClient, settings: HubSettings) : HubClient 
             parameter("include_system", includeSystem)
         }
 
-    suspend fun program(device: String, id: String): HubResult<ProgramDetail> =
+    override suspend fun program(device: String, id: String): HubResult<ProgramDetail> =
         read("/program") {
             parameter("device", device)
             parameter("id", id)
         }
 
-    suspend fun logs(device: String, id: String, lines: Int): HubResult<List<String>> =
+    override suspend fun logs(device: String, id: String, lines: Int): HubResult<List<String>> =
         read("/logs") {
             parameter("device", device)
             parameter("id", id)
             parameter("lines", lines)
         }
 
-    suspend fun act(device: String, id: String, action: String): HubResult<ActionResult> =
+    override suspend fun act(device: String, id: String, action: String): HubResult<ActionResult> =
         mutate(
             post = true,
             path = "/actions",

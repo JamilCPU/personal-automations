@@ -2,7 +2,6 @@ package com.jamilcpu.personalautomations.ui.devices
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -15,7 +14,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -24,19 +22,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.jamilcpu.personalautomations.data.DeviceSummary
+import com.jamilcpu.personalautomations.ui.common.HubBanner
+import com.jamilcpu.personalautomations.ui.common.LoadState
 import com.jamilcpu.personalautomations.ui.common.StatusDot
+import com.jamilcpu.personalautomations.ui.common.formatUptime
 import kotlin.math.roundToInt
-
-private const val MINUTE = 60L
-private const val HOUR = 3_600L
-private const val DAY = 86_400L
-
-/** "3d 4h", "5h 12m" or "7m". */
-fun formatUptime(seconds: Long): String = when {
-    seconds >= DAY -> "${seconds / DAY}d ${seconds % DAY / HOUR}h"
-    seconds >= HOUR -> "${seconds / HOUR}h ${seconds % HOUR / MINUTE}m"
-    else -> "${seconds / MINUTE}m"
-}
 
 /** Chip labels for a device card, in display order. Empty when the device has no health. */
 fun healthChips(device: DeviceSummary): List<String> {
@@ -57,19 +47,23 @@ fun usbChip(device: DeviceSummary): String? =
 fun DevicesScreen(
     state: DevicesUiState,
     onOpenDevice: (String) -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    if (state.loading && state.devices.isEmpty()) {
-        Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+    if (!state.loaded) {
+        LoadState(error = state.loadError, onRetry = onRetry, modifier = modifier)
         return
     }
-    LazyColumn(
-        modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        items(state.devices, key = { it.id }) { device ->
-            DeviceCard(device) { onOpenDevice(device.id) }
+    Column(modifier.fillMaxSize()) {
+        if (state.stale) HubBanner()
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            items(state.devices, key = { it.id }) { device ->
+                DeviceCard(device) { onOpenDevice(device.id) }
+            }
         }
     }
 }

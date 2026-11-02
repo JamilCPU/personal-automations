@@ -5,6 +5,7 @@ import com.jamilcpu.personalautomations.data.DeviceSummary
 import com.jamilcpu.personalautomations.data.HubClient
 import com.jamilcpu.personalautomations.data.HubResult
 import com.jamilcpu.personalautomations.data.Program
+import com.jamilcpu.personalautomations.data.ProgramDetail
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -37,6 +38,14 @@ private class FakeHub : HubClient {
     }
 
     override suspend fun programs(device: String?, includeSystem: Boolean) = programs
+
+    override suspend fun program(device: String, id: String): HubResult<ProgramDetail> = HubResult.Err("unused", 0)
+
+    override suspend fun logs(device: String, id: String, lines: Int): HubResult<List<String>> =
+        HubResult.Ok(emptyList())
+
+    override suspend fun act(device: String, id: String, action: String): HubResult<ActionResult> =
+        HubResult.Ok(ActionResult(true))
 
     override suspend fun setUsb(device: String, on: Boolean): HubResult<ActionResult> {
         usbCalls += device to on
@@ -131,5 +140,55 @@ class DevicesViewModelTest {
         vm.restartGroup("robot-pi", "sentinel-ros")
         runCurrent()
         assertEquals(listOf("robot-pi" to "sentinel-ros"), hub.groupCalls)
+    }
+
+    @Test
+    fun usb_not_ok_result_shows_message() = runTest(dispatcher) {
+        val hub = FakeHub().apply {
+            usbResult = HubResult.Ok(ActionResult(ok = false, message = "lidar not detected after power on"))
+        }
+        val vm = DevicesViewModel(hub)
+        vm.setUsb("robot-pi", true)
+        runCurrent()
+        assertEquals("lidar not detected after power on", vm.state.value.error)
+        assertTrue(vm.state.value.busy.isEmpty())
+    }
+
+    @Test
+    fun poll_failure_after_load_marks_stale_quietly_and_recovers() = runTest(dispatcher) {
+        val hub = FakeHub().apply { devices = HubResult.Ok(listOf(pi)) }
+        val vm = DevicesViewModel(hub)
+        vm.start()
+        runCurrent()
+        assertFalse(vm.state.value.stale)
+
+        hub.devices = HubResult.Err("Can't reach the hub", 0)
+        advanceTimeBy(5_001)
+        assertTrue(vm.state.value.stale)
+        assertEquals(null, vm.state.value.error)
+        assertEquals(listOf(pi), vm.state.value.devices)
+
+        hub.devices = HubResult.Ok(listOf(pi))
+        advanceTimeBy(5_000)
+        assertFalse(vm.state.value.stale)
+        vm.stop()
+    }
+
+    @Test
+    fun failure_before_any_load_sets_load_error_and_retry_recovers() = runTest(dispatcher) {
+        val hub = FakeHub().apply { devices = HubResult.Err("Can't reach the hub", 0) }
+        val vm = DevicesViewModel(hub)
+        vm.start()
+        runCurrent()
+        assertEquals("Can't reach the hub", vm.state.value.loadError)
+        assertFalse(vm.state.value.stale)
+        assertEquals(null, vm.state.value.error)
+
+        hub.devices = HubResult.Ok(listOf(pi))
+        vm.retry()
+        runCurrent()
+        assertEquals(null, vm.state.value.loadError)
+        assertEquals(listOf(pi), vm.state.value.devices)
+        vm.stop()
     }
 }
