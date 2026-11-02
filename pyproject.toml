@@ -21,6 +21,10 @@ dev = ["pytest", "pytest-asyncio", "respx", "ruff", "pa-core", "pa-agent", "pa-h
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 testpaths = ["core", "agent", "hub", "mcp"]
+filterwarnings = [
+    # FastAPI's TestClient still imports starlette.testclient on httpx; harmless in tests.
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 
 [tool.ruff]
 line-length = 100
