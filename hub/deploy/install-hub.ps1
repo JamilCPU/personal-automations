@@ -17,10 +17,14 @@
 [CmdletBinding()]
 param(
     [switch]$Uninstall,
-    [string]$ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+    [string]$ProjectDir
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty in param defaults, so resolve here.
+if (-not $ProjectDir) {
+    $ProjectDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\..')).Path
+}
 $TaskName = 'Personal Automations Hub'
 $McpTaskName = 'Personal Automations MCP'
 $RuleName = 'Personal Automations Hub'

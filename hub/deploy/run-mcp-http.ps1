@@ -10,12 +10,16 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ProjectDir = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path,
+    [string]$ProjectDir,
     [string]$BindHost = '192.168.0.197',
     [int]$Port = 7702
 )
 
 $ErrorActionPreference = 'Stop'
+# Windows PowerShell 5.1 leaves $PSScriptRoot empty in param defaults, so resolve here.
+if (-not $ProjectDir) {
+    $ProjectDir = (Resolve-Path (Join-Path (Split-Path -Parent $MyInvocation.MyCommand.Path) '..\..')).Path
+}
 $home_ = Join-Path $env:LOCALAPPDATA 'personal-automations'
 $secrets = Get-Content (Join-Path $home_ 'hub.secrets.toml') -Raw
 $match = [regex]::Match($secrets, '(?m)^\s*"([^"]+)"\s*=\s*"mcp-http"\s*$')
