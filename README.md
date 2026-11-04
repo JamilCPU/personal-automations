@@ -14,7 +14,7 @@ Claude Code ┘   (MCP server)       └── agent on Robot Pi
 |------|------|
 | `core/` | shared models, command runner and program-visibility policy (`pa_core`) |
 | `agent/` | per-device FastAPI agent plus deploy files (`agent/deploy/`) |
-| `hub/` | hub (runs on jw, 192.0.2.197): aggregates agents, action history, pairing, Windows autostart (`hub/deploy/`) |
+| `hub/` | hub (runs on the always-on lab PC): aggregates agents, action history, pairing, Windows autostart (`hub/deploy/`) |
 | `mcp/` | MCP server for Claude Code (stdio, or streamable HTTP on :7702) |
 | `android/` | Kotlin / Jetpack Compose app |
 | `docs/` | [INSTALL.md](docs/INSTALL.md), [DEPLOY.md](docs/DEPLOY.md), [API.md](docs/API.md) |
