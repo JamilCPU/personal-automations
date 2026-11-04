@@ -211,7 +211,7 @@ class LocalWindowsDevice:
         run: Runner = run,
         hub_pid: int | None = None,
         procs: Any = psutil,
-        services: Callable[[], Iterable[Any]] = psutil.win_service_iter,
+        services: Callable[[], Iterable[Any]] | None = None,
         windowed_pids: Callable[[], dict[int, str]] = enum_windowed_pids,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
@@ -222,7 +222,8 @@ class LocalWindowsDevice:
         self._run = run
         self._hub_pid = os.getpid() if hub_pid is None else hub_pid
         self._procs = procs
-        self._services = services
+        # psutil.win_service_iter only exists on Windows; resolve lazily so the hub imports on Linux.
+        self._services = services if services is not None else psutil.win_service_iter
         self._windowed_pids = windowed_pids
         self._sleep = sleep
         self._clock = clock
