@@ -59,7 +59,9 @@ class HistoryStore:
             conn.executescript(_SCHEMA)
 
     def _connect(self) -> sqlite3.Connection:
-        return sqlite3.connect(self._db_path)
+        # Writers from several threads/requests contend for the file lock; wait instead of
+        # failing with "database is locked" (the 5 s default is too short on slow disks/CI).
+        return sqlite3.connect(self._db_path, timeout=30)
 
     def add(self, entry: HistoryEntry) -> None:
         with closing(self._connect()) as conn, conn:
