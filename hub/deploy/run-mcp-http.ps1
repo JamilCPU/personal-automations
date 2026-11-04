@@ -11,7 +11,7 @@
 [CmdletBinding()]
 param(
     [string]$ProjectDir,
-    [string]$BindHost = '192.0.2.197',
+    [string]$BindHost = $(if ($env:PA_MCP_BIND_HOST) { $env:PA_MCP_BIND_HOST } else { '127.0.0.1' }),
     [int]$Port = 7702
 )
 
