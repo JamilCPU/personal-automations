@@ -1,2 +1,6 @@
 android/gradlew text eol=lf
 *.sh text eol=lf
+*.sudoers text eol=lf
+*.service text eol=lf
+agent/deploy/*.yaml text eol=lf
+Dockerfile text eol=lf
