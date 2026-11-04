@@ -16,6 +16,15 @@ jobs:
       - run: uv run pytest -q
       - run: uv run ruff check .
 
+  linux-image:
+    # The hub + MCP run on Linux (k3s on jw): the image must build and both CLIs must import there.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t pa-hub-ci .
+      - run: docker run --rm pa-hub-ci pa-hub --help
+      - run: docker run --rm pa-hub-ci pa-mcp --help
+
   android:
     runs-on: ubuntu-latest
     defaults:
